@@ -70,7 +70,6 @@ public class OSSFileIO implements FileIO {
 
     @Override
     public void delete(URI path) {
-        // 列举所有包含指定前缀的文件并删除。
         String nextMarker = null;
         int maxKeys = 200;
         ObjectListing objectListing = null;
