@@ -1,0 +1,233 @@
+package demo.fscatalog.process;
+
+import demo.fscatalog.io.entity.FileEntity;
+import demo.fscatalog.io.FileIO;
+import demo.fscatalog.io.entity.Pair;
+
+import java.io.IOException;
+import java.net.URI;
+import java.nio.file.FileAlreadyExistsException;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+
+/**
+ * Committing using the FileTracker policy is safe as long as the file system provides single-file
+ * atomic write operations and list operations. It is thread-safe.
+ * This policy applies to almost all file systems.
+ */
+public class FileTrackerCommitStrategy {
+    private static final String COMMIT_HINT = "COMMIT-HINT.TXT";
+    // just demo,no config
+    private static final Integer maxSaveNum = 2;
+    // just demo,no config
+    private static final long CLEAN_TTL = 30*1000;
+
+    public synchronized void commit(FileIO fileIO, URI rootPath) throws Exception {
+        URI trackerDir = rootPath.resolve("tracker/");
+        URI commitDirRoot = rootPath.resolve("commit/");
+        URI archiveDir = rootPath.resolve("archive/");
+        fileIO.createDirectory(trackerDir);
+        fileIO.createDirectory(commitDirRoot);
+        fileIO.createDirectory(archiveDir);
+        // write-tracker
+        Pair<Long,List<FileEntity>> commitInfoBeforeCommit = findNextCommitInfo(fileIO,trackerDir,commitDirRoot);
+        long version = commitInfoBeforeCommit.getKey();
+        String hintVersion = String.valueOf(version);
+        URI trackerFile = trackerDir.resolve(hintVersion);
+        if(!fileIO.exists(trackerFile)){
+            fileIO.writeFile(trackerFile,hintVersion,false);
+        }
+        URI commitDir = commitDirRoot.resolve(hintVersion+"/");
+        List<FileEntity> alreadyExistsCommit = commitInfoBeforeCommit.getValue();
+        URI commitHint = commitDir.resolve(COMMIT_HINT);
+        fastFailIfCommitInfoTooOld(fileIO, alreadyExistsCommit, trackerDir, commitHint);
+        // do-commit
+        // 根据tracker的结果 定位到commit文件夹,然后写入一个提交记录.
+        String commitFileName = writeCommitInfo(fileIO, commitDir, hintVersion);
+        // check current commit
+        // 写入完提提交结果后,等待一段时间,然后查看自己的提交是不是正确的提交.
+        // 如果不是,提交失败. 否则,开始写入HINT,提交实际上就成功了.
+        checkCommitSuccess(fileIO, commitDir, commitFileName, commitHint);
+
+        try{
+            // 这部分逻辑属于扫尾工作.
+            // 除过一些特殊的场景需要抛出异常,剩下的情况,应当吞咽所有异常,因为提交已经成功.
+            // 我们只是收尾工作没有做好而已.可以下次再做.
+            //check if dirty commit
+            Pair<Long,List<FileEntity>> resultPair = findNextCommitInfo(fileIO,trackerDir,commitDirRoot);
+            long maxVersionAfterCommit = resultPair.getKey();
+            fastFailIfDirtyCommit(fileIO, maxVersionAfterCommit, version, commitDir, trackerFile);
+            List<FileEntity> trackerList = fileIO.listAllFiles(trackerDir);
+            // 我们是否要清理脏提交?
+            // 详见问题3，在这个原型中,我们选择了清理. 我们模仿了hbase的行为.
+            // 如果我们要删除一个记录,我们先将它们移动到一个地方记录,然后找个时间删除掉.
+            // 一般需要等待较长的时间.
+            // 这样做是尽可能避免: 如果我出现了问题3所提到的问题,我先删除,
+            // 但有一个慢客户端在我完成删除后才完成写入. 那么这个慢客户端
+            // 写入的文件会一直留存在文件系统中.不好清理,代价偏大.、
+            // 慢IO不可能卡很久.因此我们只需要卡一个足够久的时间,就可以解决99%的问题.
+            // 剩下的1% 人工支持都行.
+            // 移动到archive后, tracker 中的记录减少了,我们降低了commit时的扫描代价.
+            // move archive
+            moveTooOldTracker2Archive(fileIO, trackerList, maxVersionAfterCommit, archiveDir, trackerDir);
+            cleanTooOldCommit(fileIO, archiveDir, commitDirRoot);
+        }catch (Exception e){
+            // 提交成功后,除非必要,我们一般不抛出任何异常.
+            // 这里只是演示一下.
+//            throw new RuntimeException("demo error",e);
+            e.printStackTrace();
+        }
+    }
+
+    private void cleanTooOldCommit(FileIO fileIO, URI archiveDir, URI commitDirRoot) throws IOException {
+        List<FileEntity> archiveList = fileIO.listAllFiles(archiveDir);
+        archiveList.sort(Comparator.comparing((x)-> Long.parseLong(x.getFileName())));
+        FileEntity cleanFile = archiveList.stream().findFirst().orElse(null);
+        if(cleanFile!=null){
+            String fileName = cleanFile.getFileName();
+            URI uri = archiveDir.resolve(fileName);
+            String entity = fileIO.read(uri);
+            long expireTimestamp = Long.parseLong(entity);
+            if(System.currentTimeMillis()>expireTimestamp){
+                URI oldCommitDir = commitDirRoot.resolve(fileName+"/");
+                fileIO.delete(oldCommitDir);
+                fileIO.delete(uri);
+            }
+        }
+    }
+
+    private void moveTooOldTracker2Archive(FileIO fileIO, List<FileEntity> trackerList, long maxVersionAfterCommit, URI archiveDir, URI trackerDir) throws IOException {
+        List<FileEntity> needMove2Archive = trackerList.stream()
+                .filter(x->{
+                    String name = x.getFileName();
+                    long fileVersion = Long.parseLong(name);
+                    return maxVersionAfterCommit -fileVersion > maxSaveNum;
+                }).collect(Collectors.toList());
+
+        for (FileEntity archiveFile : needMove2Archive) {
+            URI archiveEntity = archiveDir.resolve(archiveFile.getFileName());
+            String expireTimeStamp = String.valueOf(System.currentTimeMillis()+CLEAN_TTL);
+            fileIO.writeFile(archiveEntity,expireTimeStamp,false);
+            URI dropTracker = trackerDir.resolve(archiveFile.getFileName());
+            fileIO.delete(dropTracker);
+        }
+    }
+
+    private void fastFailIfDirtyCommit(FileIO fileIO, long maxVersionAfterCommit, long version, URI commitDir, URI trackerFile) throws IOException {
+        if(maxVersionAfterCommit - version > maxSaveNum){
+            fileIO.delete(commitDir);
+            fileIO.delete(trackerFile);
+            throw new RuntimeException("Dirty Commit!");
+        }
+    }
+
+    private void checkCommitSuccess(FileIO fileIO, URI commitDir, String commitFileName, URI commitHint) throws InterruptedException, IOException {
+        TimeUnit.MICROSECONDS.sleep(fileIO.getFileSystemTimeAccuracy());
+        List<FileEntity> fileEntityList = fileIO.listAllFiles(commitDir);
+        FileEntity earliestCommitFile = findEarliestCommit(fileEntityList);
+        if(earliestCommitFile==null){
+            throw new RuntimeException("The commit dir disappeared, which shouldn't have happened.");
+        }
+        if(!earliestCommitFile.getFileName().equals(commitFileName)){
+            throw new RuntimeException("commit failed");
+        }else{
+            try{
+                fileIO.writeFile(commitHint, commitFileName,false);
+            }catch (FileAlreadyExistsException e){
+                 // do-nothing
+                // 可能有别的客户端跑到了提交失败并且补充HINT的逻辑. 它们也在写入HINT.
+                // 如果HINT已经存在,忽略这个异常.
+            }catch (IOException e){
+                // 如果文件系统出现IO异常,查看一次HINT是否被写入,如果写入失败,抛出提交失败异常.
+                if(!fileIO.exists(commitHint)){
+                    throw e;
+                }
+            }catch (Exception e){
+                // 客户端出现问题了,无法确认文件系统给是否真的写入成功,这里抛出commitStateUnknown异常.
+                // 也就是说,抛出一个特殊的异常,外层引擎识别到此异常,不进行任何数据清理.
+                throw new RuntimeException("commit state unknown",e);
+            }
+        }
+    }
+
+    private String writeCommitInfo(FileIO fileIO, URI commitDir, String hintVersion) throws IOException {
+        fileIO.createDirectory(commitDir);
+        String commitFileName = UUID.randomUUID().toString();
+        URI commitFile = commitDir.resolve(commitFileName);
+        String content = String.format("CommitVersion:[%s],commitFile:[%s]", hintVersion,commitFileName);
+        fileIO.writeFile(commitFile,content,false);
+        return commitFileName;
+    }
+
+    private void fastFailIfCommitInfoTooOld(FileIO fileIO, List<FileEntity> alreadyExistsCommit, URI trackerDir, URI commitHint) throws InterruptedException, IOException {
+        // 如果这个版本下已经存在提交了,那么本次提交其实已经失败了.因为这次提交不可能是时间最早的提交了.
+        // 这里存在两种可能,第一种情况是,所有的客户端都正常,只是这个瞬间没来得及写入HINT.
+        // 第二种情况是,之前最早提交的客户端写HINT时挂了.没有客户端去写HINT.
+        // 因此无论无何,我们需要补一次HINT文件. 然后抛出提交失败的异常.
+        if(!alreadyExistsCommit.isEmpty()){
+            // 如果tracker记录的文件夹下存在提交记录, 先去查看是否存在commitHint文件
+            // 如果存在commitHint文件,直接退出 抛出提交失败异常.
+            FileEntity commitHintEntity =  alreadyExistsCommit.stream().filter(x->x.getFileName().equals(COMMIT_HINT)).findAny().orElse(null);
+            if(commitHintEntity==null){
+                // 如果不存在commitHint文件,我们假设有别的客户端正在写入新的commitHint
+                // 那么我们可以等待一定的时间后,再次查看是否有Hint被写入.
+                // 如果此时有Hint,那么退出并抛出提交失败异常.
+                // 如果依然没有HINT,那么寻找到时间最小,名称最小的文件,写HINT,然后失败抛出异常.
+                TimeUnit.MICROSECONDS.sleep(fileIO.getFileSystemTimeAccuracy());
+                List<FileEntity> commits = fileIO.listAllFiles(trackerDir);
+                FileEntity checkHintAgain =  alreadyExistsCommit.stream().filter(x->x.getFileName().equals(COMMIT_HINT)).findAny().orElse(null);
+                if(checkHintAgain==null){
+                    FileEntity earliestCommitFile = findEarliestCommit(commits);
+                    if(earliestCommitFile==null){
+                        throw new RuntimeException("The commit dir disappeared, which shouldn't have happened.");
+                    }
+                    // 也可以不检查,直接写入.但写入前本身就要List一次寻找问最小的文件,check可以顺手做掉.
+                    fileIO.writeFile(commitHint,earliestCommitFile.getFileName(),false);
+                }
+            }
+            throw new RuntimeException("commit failed exception");
+        }
+    }
+
+    private FileEntity findEarliestCommit(List<FileEntity> commitEntity){
+        Map<Long,List<FileEntity>> groupedResult = new HashMap<>();
+        commitEntity.forEach(x->{
+            if(!x.getFileName().equals(COMMIT_HINT)){
+                groupedResult.computeIfAbsent(x.getLastModified(), k -> new ArrayList<>());
+                groupedResult.get(x.getLastModified()).add(x);
+            }
+        });
+        long earliestFileTime = groupedResult.keySet().stream().min(Long::compareTo).orElse(Long.MAX_VALUE);
+        List<FileEntity> filteredGroup = groupedResult.getOrDefault(earliestFileTime,new ArrayList<>());
+
+        filteredGroup.sort(Comparator.comparing(FileEntity::getFileName));
+        return filteredGroup.stream().findFirst().orElse(null);
+    }
+
+    private Pair<Long,List<FileEntity>> findNextCommitInfo(FileIO fileIO, URI trackerDir, URI commitDir) throws IOException {
+        Pair<Long,List<FileEntity>> pair = new Pair<>();
+        List<FileEntity> commitVersionHints = fileIO.listAllFiles(trackerDir);
+        pair.setValue(commitVersionHints);
+        long maxVersion = commitVersionHints.stream().map(x->Long.parseLong(x.getFileName()))
+                .max(Long::compareTo)
+                .orElse(0L);
+        List<FileEntity> commitDetails = fileIO.listAllFiles(getCommitDir(commitDir,maxVersion));
+        String commitDetailHint = commitDetails.stream().map(FileEntity::getFileName)
+                .filter(x->x.equals(COMMIT_HINT))
+                .findAny()
+                .orElse(null);
+        long commitVersion = maxVersion;
+        if(commitDetailHint!=null){
+            commitVersion++;
+            pair.setValue(new ArrayList<>());
+        }
+        pair.setKey(commitVersion);
+        return pair;
+    }
+
+    private URI getCommitDir(URI commitRootPath,long commitVersion) {
+        return commitRootPath.resolve(commitVersion +"/");
+    }
+}
