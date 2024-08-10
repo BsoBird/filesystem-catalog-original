@@ -19,15 +19,15 @@ public class TestStrategy {
         FileIO fileIO = new LocalFileIO();
         fileIO.init(new HashMap<>());
         File file = new File("D:\\var\\log\\test-table");
-        FileTrackerCommitStrategy fileTrackerCommitStrategy = new FileTrackerCommitStrategy();
-        fileTrackerCommitStrategy.commit(fileIO,file.toURI());
+        CommitStrategy commitStrategy = new FileTrackerCommitStrategy();
+        commitStrategy.commit(fileIO,file.toURI());
     }
 
     private static void testOssFileTracker() throws Exception {
         FileIO fileIO = new OSSFileIO();
         fileIO.init(new HashMap<>());
-        FileTrackerCommitStrategy fileTrackerCommitStrategy = new FileTrackerCommitStrategy();
-        fileTrackerCommitStrategy.commit(fileIO,URI.create("https://oss-cn-zhangjiakou.aliyuncs.com/data-plat/test/dir-meta-test/"));
+        CommitStrategy commitStrategy = new FileTrackerCommitStrategy();
+        commitStrategy.commit(fileIO,URI.create("https://oss-cn-zhangjiakou.aliyuncs.com/data-plat/test/dir-meta-test/"));
     }
 
 }

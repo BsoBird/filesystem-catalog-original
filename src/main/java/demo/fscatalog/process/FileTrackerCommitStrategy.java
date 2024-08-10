@@ -17,13 +17,14 @@ import java.util.stream.Collectors;
  * atomic write operations and list operations. It is thread-safe.
  * This policy applies to almost all file systems.
  */
-public class FileTrackerCommitStrategy {
+public class FileTrackerCommitStrategy implements CommitStrategy{
     private static final String COMMIT_HINT = "COMMIT-HINT.TXT";
     // just demo,no config
     private static final Integer maxSaveNum = 2;
     // just demo,no config
     private static final long CLEAN_TTL = 30*1000;
 
+    @Override
     public synchronized void commit(FileIO fileIO, URI rootPath) throws Exception {
         URI trackerDir = rootPath.resolve("tracker/");
         URI commitDirRoot = rootPath.resolve("commit/");
