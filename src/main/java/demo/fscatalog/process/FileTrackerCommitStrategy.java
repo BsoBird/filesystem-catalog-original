@@ -76,7 +76,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
         URI commitDir = commitDirRoot.resolve(hintVersion+"/");
         List<FileEntity> alreadyExistsCommit = commitInfoBeforeCommit.getValue();
         URI commitHint = commitDir.resolve(COMMIT_HINT);
-        fastFailIfCommitInfoTooOld(fileIO, alreadyExistsCommit, trackerDir, commitHint);
+        fastFailIfCommitInfoTooOld(fileIO, alreadyExistsCommit, commitDir, commitHint);
         // do-commit
         // 根据tracker的结果 定位到commit文件夹,然后写入一个提交记录.
         String commitFileName = writeCommitInfo(fileIO, commitDir, hintVersion);
@@ -195,7 +195,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
         return commitFileName;
     }
 
-    private void fastFailIfCommitInfoTooOld(FileIO fileIO, List<FileEntity> alreadyExistsCommit, URI trackerDir, URI commitHint) throws InterruptedException, IOException {
+    private void fastFailIfCommitInfoTooOld(FileIO fileIO, List<FileEntity> alreadyExistsCommit, URI commitDir, URI commitHint) throws InterruptedException, IOException {
         // 如果这个版本下已经存在提交了,那么本次提交其实已经失败了.因为这次提交不可能是时间最早的提交了.
         // 这里存在两种可能,第一种情况是,所有的客户端都正常,只是这个瞬间没来得及写入HINT.
         // 第二种情况是,之前最早提交的客户端写HINT时挂了.没有客户端去写HINT.
@@ -210,7 +210,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
                 // 如果此时有Hint,那么退出并抛出提交失败异常.
                 // 如果依然没有HINT,那么寻找到时间最小,名称最小的文件,写HINT,然后失败抛出异常.
                 TimeUnit.MICROSECONDS.sleep(fileIO.getFileSystemTimeAccuracy());
-                List<FileEntity> commits = fileIO.listAllFiles(trackerDir);
+                List<FileEntity> commits = fileIO.listAllFiles(commitDir);
                 FileEntity checkHintAgain =  alreadyExistsCommit.stream().filter(x->x.getFileName().equals(COMMIT_HINT)).findAny().orElse(null);
                 if(checkHintAgain==null){
                     FileEntity earliestCommitFile = findEarliestCommit(commits);
