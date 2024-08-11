@@ -225,7 +225,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
         }
     }
 
-    private FileEntity findEarliestCommit(List<FileEntity> commitEntity){
+    FileEntity findEarliestCommit(List<FileEntity> commitEntity){
         Map<Long,List<FileEntity>> groupedResult = new HashMap<>();
         commitEntity.forEach(x->{
             if(!x.getFileName().equals(COMMIT_HINT)){

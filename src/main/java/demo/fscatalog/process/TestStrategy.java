@@ -19,6 +19,7 @@ public class TestStrategy {
 //        testOssFileTracker();
 //        testLocalFileTracker();
         testLocalFileTrackerWithConcurrent();
+//        check();
     }
 
 
