@@ -243,17 +243,19 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
     private Pair<Long,List<FileEntity>> findNextCommitInfo(FileIO fileIO, URI trackerDir, URI commitDir) throws IOException {
         Pair<Long,List<FileEntity>> pair = new Pair<>();
         List<FileEntity> commitVersionHints = fileIO.listAllFiles(trackerDir);
-        pair.setValue(commitVersionHints);
         long maxVersion = commitVersionHints.stream().map(x->Long.parseLong(x.getFileName()))
                 .max(Long::compareTo)
                 .orElse(0L);
         List<FileEntity> commitDetails = fileIO.listAllFiles(getCommitDir(commitDir,maxVersion));
-        String commitDetailHint = commitDetails.stream().map(FileEntity::getFileName)
-                .filter(x->x.equals(COMMIT_HINT))
+        FileEntity hintFile = commitDetails
+                .stream()
+                .filter(x->COMMIT_HINT.equals(x.getFileName()))
                 .findAny()
                 .orElse(null);
+        commitDetails.remove(hintFile);
+        pair.setValue(commitDetails);
         long commitVersion = maxVersion;
-        if(commitDetailHint!=null){
+        if(hintFile!=null){
             commitVersion++;
             pair.setValue(new ArrayList<>());
         }
