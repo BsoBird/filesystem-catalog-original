@@ -22,7 +22,40 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
     // just demo,no config
     private static final Integer maxSaveNum = 2;
     // just demo,no config
-    private static final long CLEAN_TTL = 30*1000;
+    private static final long CLEAN_TTL = 30 * 1000;
+
+    /*
+    * 这个策略是使用commit文件的最小时间来确定哪一次提交是成功的提交.
+    * 因此每一次提交都是一个文件夹,每一个客户端都向这个文件夹写入commit记录,
+    * 在这个文件夹下,时间最早,并且名称字典序最小的commit记录是成功的记录.
+    * 在每一个文件夹下,我们都写入一个HINT文件来协助客户端快速定位应该读取某个版本下哪个Hint.
+    *
+    * 由于我们使用 list操作+最小时间+最小名称 的方案确定提交,因此这套方案基本没有任何并发问题.
+    * 它是线程安全的.并且基本所有文件系统都支持这种操作.
+    *
+    * 它大体的结构如下:
+    * db/table/
+    *         commit/
+    *               v0/
+    *                   uuid01-commit.json
+    *                   uuid02-commit.json
+    *                   commit-hint.txt ---> uuid01-commit.json
+    *               v1/
+    *                   uuid01-commit.json
+    *                   uuid02-commit.json
+    *                   commit-hint.txt ---> uuid02-commit.json
+    *          tracker/
+    *                v0.txt
+    *                v1.txt
+    *
+    *
+    * 理论上,确定最新的commit版本,需要list commit文件夹下 V0 V1....这类的子文件夹,拿到最大的版本.
+    * 但是不是所有的文件系统都支持列出子文件夹,例如对象存储.
+    * 因此我们采用了一个更加保守的方案,我们使用tracker文件来跟踪有什么子文件夹.
+    * tracker文件夹中记录的跟踪记录可以多于实际commit的记录,但仅限多一个版本.不能少于实际commit记录.
+    * 这是一套灵感来自于hbase的方案. hbase可以使用tracker来实现基于s3的数据管理.我们当然也可以.
+    *
+    * */
 
     @Override
     public synchronized void commit(FileIO fileIO, URI rootPath) throws Exception {
