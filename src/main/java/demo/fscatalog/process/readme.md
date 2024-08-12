@@ -2,8 +2,8 @@
 
 1.所有的strategy应该有一个公共的接口类.
 
-2.FileIO中,对于一些复杂的操作,例如LIST,不同的FS行为是不一致的,我们是仅在doc中提醒用户它们的行为可能有区别,还是说在方法入参中带入一些参数,
-不同的参数组合表示体现出不同的行为,但是所有的FS实现必须行为一致. 
+2.**FileIO中,对于一些复杂的操作,例如LIST,不同的FS行为是不一致的,我们是仅在doc中提醒用户它们的行为可能有区别,还是说在方法入参中带入一些参数,
+不同的参数组合表示体现出不同的行为,但是所有的FS实现必须行为一致?**
 >举个例子(所有的例子都在FileIO接口中),例如 `renameFile(URI src, URI dst,boolean overwrite)` 这个方法.
 我们使用`boolean overwrite`这个表示来表示rename是否覆盖这种行为. 对于不同的OS,
 要么抛出 UnsupportedOperatorException,要么按照预期实现.
