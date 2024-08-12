@@ -55,6 +55,7 @@ public class OSSFileIO implements FileIO {
         String key = getOssKey(pathStr);
         final PutObjectRequest request = new PutObjectRequest(bucketName, key, new ByteArrayInputStream(content.getBytes()));
         request.setMetadata(getOssDefaultMetadata(overwrite));
+        request.addHeader("Cache-Control", "no-store");
         oss.putObject(request);
     }
 
@@ -69,7 +70,7 @@ public class OSSFileIO implements FileIO {
     }
 
     @Override
-    public void delete(URI path) {
+    public void delete(URI path) throws IOException {
         String nextMarker = null;
         int maxKeys = 200;
         ObjectListing objectListing = null;
@@ -86,10 +87,14 @@ public class OSSFileIO implements FileIO {
                     keys.add(s.getKey());
                 }
                 DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucketName).withKeys(keys).withEncodingType("url");
+                deleteObjectsRequest.addHeader("Cache-Control", "no-store");
                 oss.deleteObjects(deleteObjectsRequest);
             }
             nextMarker = objectListing.getNextMarker();
         } while (objectListing.isTruncated());
+        if(exists(path)){
+            throw new InterruptedIOException("OSS 删除数据失败!");
+        }
     }
 
     private String getOssKey(String path) {
@@ -109,6 +114,7 @@ public class OSSFileIO implements FileIO {
         metadata.setObjectAcl(CannedAccessControlList.PublicRead);
         if (!overwrite) {
             metadata.setHeader("x-oss-forbid-overwrite", "true");
+            metadata.setHeader("Cache-Control", "no-store");
         }
         return metadata;
     }
@@ -127,6 +133,7 @@ public class OSSFileIO implements FileIO {
         String pathStr = getOssKey(path.getPath());
         do {
             ListObjectsRequest listObjectsRequest =  new ListObjectsRequest(bucketName).withMarker(nextMarker).withMaxKeys(maxKeys);
+            listObjectsRequest.addHeader("Cache-Control", "no-store");
             listObjectsRequest.setPrefix(pathStr);
 //            listObjectsRequest.setDelimiter("/");
             objectListing = oss.listObjects(listObjectsRequest);

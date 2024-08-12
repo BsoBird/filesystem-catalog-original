@@ -1,7 +1,7 @@
 package demo.fscatalog.process;
 
-import demo.fscatalog.io.entity.FileEntity;
 import demo.fscatalog.io.FileIO;
+import demo.fscatalog.io.entity.FileEntity;
 import demo.fscatalog.io.entity.Pair;
 
 import java.io.IOException;
@@ -69,7 +69,8 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
         Pair<Long,List<FileEntity>> commitInfoBeforeCommit = findNextCommitInfo(fileIO,trackerDir,commitDirRoot);
         long version = commitInfoBeforeCommit.getKey();
         String hintVersion = String.valueOf(version);
-        URI trackerFile = trackerDir.resolve(hintVersion);
+        String hintVersionFileName = hintVersion+".txt";
+        URI trackerFile = trackerDir.resolve(hintVersionFileName);
         if(!fileIO.exists(trackerFile)){
             fileIO.writeFile(trackerFile,hintVersion,false);
         }
@@ -117,17 +118,22 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
 
     private void cleanTooOldCommit(FileIO fileIO, URI archiveDir, URI commitDirRoot) throws IOException {
         List<FileEntity> archiveList = fileIO.listAllFiles(archiveDir);
-        archiveList.sort(Comparator.comparing((x)-> Long.parseLong(x.getFileName())));
+        archiveList.sort(Comparator.comparing((x)-> Long.parseLong(x.getFileName().split("\\.")[0])));
         FileEntity cleanFile = archiveList.stream().findFirst().orElse(null);
+
         if(cleanFile!=null){
             String fileName = cleanFile.getFileName();
-            URI uri = archiveDir.resolve(fileName);
-            String entity = fileIO.read(uri);
+            URI archiveFile = archiveDir.resolve(fileName);
+            if(!fileIO.exists(archiveFile)){
+                return;
+            }
+            String entity = fileIO.read(archiveFile);
             long expireTimestamp = Long.parseLong(entity);
             if(System.currentTimeMillis()>expireTimestamp){
-                URI oldCommitDir = commitDirRoot.resolve(fileName+"/");
+                String dropVersion = fileName.split("\\.")[0];
+                URI oldCommitDir = commitDirRoot.resolve(dropVersion+"/");
                 fileIO.delete(oldCommitDir);
-                fileIO.delete(uri);
+                fileIO.delete(archiveFile);
             }
         }
     }
@@ -136,7 +142,8 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
         List<FileEntity> needMove2Archive = trackerList.stream()
                 .filter(x->{
                     String name = x.getFileName();
-                    long fileVersion = Long.parseLong(name);
+                    String versionStr = name.split("\\.")[0];
+                    long fileVersion = Long.parseLong(versionStr);
                     return maxVersionAfterCommit -fileVersion > maxSaveNum;
                 }).collect(Collectors.toList());
 
@@ -243,7 +250,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
     private Pair<Long,List<FileEntity>> findNextCommitInfo(FileIO fileIO, URI trackerDir, URI commitDir) throws IOException {
         Pair<Long,List<FileEntity>> pair = new Pair<>();
         List<FileEntity> commitVersionHints = fileIO.listAllFiles(trackerDir);
-        long maxVersion = commitVersionHints.stream().map(x->Long.parseLong(x.getFileName()))
+        long maxVersion = commitVersionHints.stream().map(x->Long.parseLong(x.getFileName().split("\\.")[0]))
                 .max(Long::compareTo)
                 .orElse(0L);
         List<FileEntity> commitDetails = fileIO.listAllFiles(getCommitDir(commitDir,maxVersion));
