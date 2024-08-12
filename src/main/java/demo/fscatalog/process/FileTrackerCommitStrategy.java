@@ -69,6 +69,9 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
         Pair<Long,List<FileEntity>> commitInfoBeforeCommit = findNextCommitInfo(fileIO,trackerDir,commitDirRoot);
         long version = commitInfoBeforeCommit.getKey();
         String hintVersion = String.valueOf(version);
+        // 加后缀是为了规避对象存储使用前缀list时,筛选到预期之外文件的问题.
+        // 例如,我想删除 /data/01文件 但是会误删 /data/011.
+        // 因此目前是添加了后缀来限制行为.但是否需要在fileIO中规整这类细节?
         String hintVersionFileName = hintVersion+".txt";
         URI trackerFile = trackerDir.resolve(hintVersionFileName);
         if(!fileIO.exists(trackerFile)){
