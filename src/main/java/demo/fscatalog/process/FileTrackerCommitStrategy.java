@@ -139,8 +139,8 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
                 if(System.currentTimeMillis()>expireTimestamp){
                     String dropVersion = fileName.split("\\.")[0];
                     URI oldCommitDir = commitDirRoot.resolve(dropVersion+"/");
-                    fileIO.delete(oldCommitDir);
-                    fileIO.delete(archiveFile);
+                    fileIO.delete(oldCommitDir,true);
+                    fileIO.delete(archiveFile,false);
                 }
             }
         }
@@ -160,15 +160,17 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
             String archiveFileName = archiveFile.getFileName()+"@"+expireTimeStamp;
             URI dropTracker = trackerDir.resolve(archiveFile.getFileName());
             URI archiveEntity = archiveDir.resolve(archiveFileName);
-            fileIO.writeFile(archiveEntity,expireTimeStamp,false);
-            fileIO.delete(dropTracker);
+            if(!fileIO.exists(archiveEntity)){
+                fileIO.writeFile(archiveEntity,expireTimeStamp,false);
+            }
+            fileIO.delete(dropTracker,false);
         }
     }
 
     private void fastFailIfDirtyCommit(FileIO fileIO, long maxVersionAfterCommit, long version, URI commitDir, URI trackerFile) throws IOException {
         if(maxVersionAfterCommit - version > maxSaveNum){
-            fileIO.delete(commitDir);
-            fileIO.delete(trackerFile);
+            fileIO.delete(commitDir,true);
+            fileIO.delete(trackerFile,false);
             throw new RuntimeException("Dirty Commit!");
         }
     }
@@ -181,7 +183,8 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
             throw new RuntimeException("The commit dir disappeared, which shouldn't have happened.");
         }
         if(!earliestCommitFile.getFileName().equals(commitFileName)){
-            throw new RuntimeException("commit failed");
+            String msg = String.format("Commit Failed,Hint[%s],Commit[%s]",earliestCommitFile.getFileName(),commitFileName);
+            throw new RuntimeException(msg);
         }else{
             try{
                 fileIO.writeFile(commitHint, commitFileName,false);
@@ -234,10 +237,12 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
                         throw new RuntimeException("The commit dir disappeared, which shouldn't have happened.");
                     }
                     // 也可以不检查,直接写入.但写入前本身就要List一次寻找问最小的文件,check可以顺手做掉.
-                    fileIO.writeFile(commitHint,earliestCommitFile.getFileName(),false);
+                    if(!fileIO.exists(commitHint)){
+                        fileIO.writeFile(commitHint,earliestCommitFile.getFileName(),false);
+                    }
                 }
             }
-            throw new RuntimeException("commit failed exception");
+            throw new RuntimeException("Commit failed exception!too old commit!");
         }
     }
 

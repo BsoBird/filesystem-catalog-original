@@ -73,18 +73,22 @@ public class LocalFileIO implements FileIO {
     }
 
     @Override
-    public void delete(URI path) throws IOException {
+    public void delete(URI path,boolean recursion) throws IOException {
         File file = new File(path);
-        List<Path> walkResult = new ArrayList<>();
-        try (Stream<Path> walk = Files.walk(file.toPath())) {
-            walk.sorted(Comparator.reverseOrder())
-                    .forEach(walkResult::add);
-        }catch (NoSuchFileException e){
-            //do-nothing
-            e.printStackTrace();
-        }
-        for (Path deletePath : walkResult) {
-            Files.delete(deletePath);
+        if(recursion){
+            List<Path> walkResult = new ArrayList<>();
+            try (Stream<Path> walk = Files.walk(file.toPath())) {
+                walk.sorted(Comparator.reverseOrder())
+                        .forEach(walkResult::add);
+            }catch (NoSuchFileException e){
+                //do-nothing
+                e.printStackTrace();
+            }
+            for (Path deletePath : walkResult) {
+                Files.delete(deletePath);
+            }
+        }else{
+            file.delete();
         }
     }
 

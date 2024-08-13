@@ -17,7 +17,7 @@ public interface FileIO extends Closeable {
 
     void createDirectory(URI path) throws IOException;
 
-    void delete(URI path) throws IOException;
+    void delete(URI path,boolean recursion) throws IOException;
 
     default boolean exists(URI path) throws IOException{
         throw new UnsupportedOperationException();

@@ -70,30 +70,31 @@ public class OSSFileIO implements FileIO {
     }
 
     @Override
-    public void delete(URI path) throws IOException {
-        String nextMarker = null;
-        int maxKeys = 200;
-        ObjectListing objectListing = null;
-        String prefix = getOssKey(path.getPath());
-        do {
-            ListObjectsRequest listObjectsRequest = new ListObjectsRequest(bucketName)
-                    .withPrefix(prefix)
-                    .withMarker(nextMarker)
-                    .withMaxKeys(maxKeys);
-            objectListing = oss.listObjects(listObjectsRequest);
-            if (!objectListing.getObjectSummaries().isEmpty()) {
-                List<String> keys = new ArrayList<>();
-                for (OSSObjectSummary s : objectListing.getObjectSummaries()) {
-                    keys.add(s.getKey());
+    public void delete(URI path,boolean recursion) throws IOException {
+        if(!recursion){
+            oss.deleteObject(bucketName,getOssKey(path.getPath()));
+        }else{
+            String nextMarker = null;
+            int maxKeys = 200;
+            ObjectListing objectListing = null;
+            String prefix = getOssKey(path.getPath());
+            do {
+                ListObjectsRequest listObjectsRequest = new ListObjectsRequest(bucketName)
+                        .withPrefix(prefix)
+                        .withMarker(nextMarker)
+                        .withMaxKeys(maxKeys);
+                objectListing = oss.listObjects(listObjectsRequest);
+                if (!objectListing.getObjectSummaries().isEmpty()) {
+                    List<String> keys = new ArrayList<>();
+                    for (OSSObjectSummary s : objectListing.getObjectSummaries()) {
+                        keys.add(s.getKey());
+                    }
+                    DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucketName).withKeys(keys).withEncodingType("url");
+                    deleteObjectsRequest.addHeader("Cache-Control", "no-store");
+                    oss.deleteObjects(deleteObjectsRequest);
                 }
-                DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucketName).withKeys(keys).withEncodingType("url");
-                deleteObjectsRequest.addHeader("Cache-Control", "no-store");
-                oss.deleteObjects(deleteObjectsRequest);
-            }
-            nextMarker = objectListing.getNextMarker();
-        } while (objectListing.isTruncated());
-        if(exists(path)){
-            throw new InterruptedIOException("OSS 删除数据失败!");
+                nextMarker = objectListing.getNextMarker();
+            } while (objectListing.isTruncated());
         }
     }
 
