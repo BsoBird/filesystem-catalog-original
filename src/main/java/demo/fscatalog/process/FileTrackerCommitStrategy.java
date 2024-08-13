@@ -21,6 +21,8 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
     private static final String COMMIT_HINT = "COMMIT-HINT.TXT";
     // just demo,no config
     private static final Integer maxSaveNum = 2;
+    private static final Integer maxArchiveSize = 100;
+    private static final Integer archiveBatchCleanMaxSize = 20;
     // just demo,no config
     private static final long CLEAN_TTL = 30 * 1000;
 
@@ -122,21 +124,24 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
     private void cleanTooOldCommit(FileIO fileIO, URI archiveDir, URI commitDirRoot) throws IOException {
         List<FileEntity> archiveList = fileIO.listAllFiles(archiveDir);
         archiveList.sort(Comparator.comparing((x)-> Long.parseLong(x.getFileName().split("\\.")[0])));
-        FileEntity cleanFile = archiveList.stream().findFirst().orElse(null);
-
-        if(cleanFile!=null){
-            String fileName = cleanFile.getFileName();
-            URI archiveFile = archiveDir.resolve(fileName);
-            if(!fileIO.exists(archiveFile)){
-                return;
-            }
-            String entity = fileIO.read(archiveFile);
-            long expireTimestamp = Long.parseLong(entity);
-            if(System.currentTimeMillis()>expireTimestamp){
-                String dropVersion = fileName.split("\\.")[0];
-                URI oldCommitDir = commitDirRoot.resolve(dropVersion+"/");
-                fileIO.delete(oldCommitDir);
-                fileIO.delete(archiveFile);
+        int maxCleanTimes = Math.min(1,archiveList.size());
+        if(archiveList.size()>maxArchiveSize){
+            //多线程的情况下,如果一个一个删除,那么可能删除速度跟不上写入速度.
+            //所以这里加了一个批处理.
+            maxCleanTimes = Math.min(archiveBatchCleanMaxSize,archiveList.size());
+        }
+        for(int i=0;i<maxCleanTimes;i++){
+            FileEntity cleanFile = archiveList.get(i);
+            if(cleanFile!=null){
+                String fileName = cleanFile.getFileName();
+                URI archiveFile = archiveDir.resolve(fileName);
+                long expireTimestamp = Long.parseLong(fileName.split("@")[1]);
+                if(System.currentTimeMillis()>expireTimestamp){
+                    String dropVersion = fileName.split("\\.")[0];
+                    URI oldCommitDir = commitDirRoot.resolve(dropVersion+"/");
+                    fileIO.delete(oldCommitDir);
+                    fileIO.delete(archiveFile);
+                }
             }
         }
     }
@@ -151,10 +156,11 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
                 }).collect(Collectors.toList());
 
         for (FileEntity archiveFile : needMove2Archive) {
-            URI archiveEntity = archiveDir.resolve(archiveFile.getFileName());
             String expireTimeStamp = String.valueOf(System.currentTimeMillis()+CLEAN_TTL);
-            fileIO.writeFile(archiveEntity,expireTimeStamp,false);
+            String archiveFileName = archiveFile.getFileName()+"@"+expireTimeStamp;
             URI dropTracker = trackerDir.resolve(archiveFile.getFileName());
+            URI archiveEntity = archiveDir.resolve(archiveFileName);
+            fileIO.writeFile(archiveEntity,expireTimeStamp,false);
             fileIO.delete(dropTracker);
         }
     }
