@@ -1,18 +1,16 @@
 package demo.fscatalog.process;
 
 import demo.fscatalog.io.FileIO;
-import demo.fscatalog.io.entity.Pair;
+import demo.fscatalog.io.entity.FileEntity;
 import demo.fscatalog.io.impl.LocalFileIO;
 import demo.fscatalog.io.impl.OSSFileIO;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.net.URI;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -47,6 +45,7 @@ public class TestStrategy {
 
 
     private static void testLocalFileTrackerWithConcurrent() throws Exception {
+        long begin = System.currentTimeMillis();
         FileIO fileIO = new LocalFileIO();
         fileIO.init(new HashMap<>());
         File file = new File("D:\\var\\log\\test-table");
@@ -76,23 +75,45 @@ public class TestStrategy {
         executorService.shutdown();
         executorService.awaitTermination(5, TimeUnit.MINUTES);
         System.out.println(commitFailedTimes);
+        long end = System.currentTimeMillis();
+        System.out.println("耗时:"+((end-begin)*1.0/1000)+"s");
+        assertAllCommitIsCorrect(fileIO,file.toURI().resolve("tracker/"),file.toURI().resolve("commit/"),new FileTrackerCommitStrategy());
     }
 
+    private static void assertAllCommitIsCorrect(FileIO fileIO,URI trackerDir,URI commitRootDir,FileTrackerCommitStrategy fileTrackerCommitStrategy) throws Exception {
+        List<FileEntity> trackerList = fileIO.listAllFiles(trackerDir);
+        long max = trackerList.stream().map(x->Long.parseLong(x.getFileName().split("\\.")[0])).max(Long::compareTo).orElse(Long.MAX_VALUE);
+        for(int i=0;i<=max;i++){
+            URI commitDir = commitRootDir.resolve(i+"/");
+            if(!fileIO.exists(commitDir)){
+                continue;
+            }
+            FileEntity earliestCommitFile = fileTrackerCommitStrategy.findEarliestCommit(trackerList);
+            URI hintFile = commitDir.resolve(FileTrackerCommitStrategy.COMMIT_HINT);
+            String hintCommit = fileIO.read(hintFile);
+            if(hintCommit.equals(earliestCommitFile.getFileName())){
+                throw new RuntimeException(String.format("提交失败,理论正确的提交是[%s],实际的提交是[%s],提交版本[%s]",earliestCommitFile.getFileName(),hintCommit,i));
+            }else{
+                System.out.println(String.format("版本[%s]的提交是正确的!",i));
+            }
+        }
+        System.out.println("所有的提交都是正确的!");
+    }
+
+
     private static void testOssFileTrackerWithConcurrent() throws Exception {
+        long begin = System.currentTimeMillis();
         OSSFileIO fileIO = new OSSFileIO();
         Map<String,String> prop = new HashMap<>();
 
-//        String endpoint = properties.get("endpoint");
-//        String accessKeyId = properties.get("accessKeyId");
-//        String accessKeySecret =properties.get("accessKeySecret");
-//        bucketName = properties.get("bucketName");
+
         fileIO.init(prop);
         URI uri = URI.create("https://oss-cn-zhangjiakou.aliyuncs.com/data-plat/test/dir-meta-test/");
 
         ExecutorService executorService = Executors.newFixedThreadPool(16);
         Map<String, AtomicLong> commitFailedTimes = new HashMap<>();
         CountDownLatch countDownLatch = new CountDownLatch(10);
-        for(int t = 0;t<10;t++){
+        for(int t = 0;t<16;t++){
             executorService.execute(()->{
                 countDownLatch.countDown();
                 try {
@@ -101,7 +122,7 @@ public class TestStrategy {
                     throw new RuntimeException(e);
                 }
                 FileTrackerCommitStrategy commitStrategy = new FileTrackerCommitStrategy();
-                for(int i = 0;i<100;i++){
+                for(int i = 0;i<200;i++){
                     try {
                         commitStrategy.commit(fileIO,uri);
                     } catch (Exception e) {
@@ -118,6 +139,9 @@ public class TestStrategy {
         executorService.shutdown();
         executorService.awaitTermination(5, TimeUnit.MINUTES);
         System.out.println(commitFailedTimes);
+        long end = System.currentTimeMillis();
+        System.out.println("耗时:"+((end-begin)*1.0/1000)+"s");
+        assertAllCommitIsCorrect(fileIO,uri.resolve("tracker/"),uri.resolve("commit/"),new FileTrackerCommitStrategy());
     }
 
 }

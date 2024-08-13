@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  * This policy applies to almost all file systems.
  */
 public class FileTrackerCommitStrategy implements CommitStrategy{
-    private static final String COMMIT_HINT = "COMMIT-HINT.TXT";
+    public static final String COMMIT_HINT = "COMMIT-HINT.TXT";
     // just demo,no config
     private static final Integer maxSaveNum = 2;
     private static final Integer maxArchiveSize = 100;
