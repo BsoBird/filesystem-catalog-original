@@ -77,13 +77,15 @@ public class TestStrategy {
         System.out.println(commitFailedTimes);
         long end = System.currentTimeMillis();
         System.out.println("耗时:"+((end-begin)*1.0/1000)+"s");
-        assertAllCommitIsCorrect(fileIO,file.toURI().resolve("tracker/"),file.toURI().resolve("commit/"),new FileTrackerCommitStrategy());
+        assertAllCommitIsCorrect(fileIO,file.toURI().resolve("archive/"),file.toURI().resolve("tracker/"),file.toURI().resolve("commit/"),new FileTrackerCommitStrategy());
     }
 
-    private static void assertAllCommitIsCorrect(FileIO fileIO,URI trackerDir,URI commitRootDir,FileTrackerCommitStrategy fileTrackerCommitStrategy) throws Exception {
+    private static void assertAllCommitIsCorrect(FileIO fileIO,URI archiveDir,URI trackerDir,URI commitRootDir,FileTrackerCommitStrategy fileTrackerCommitStrategy) throws Exception {
         List<FileEntity> trackerList = fileIO.listAllFiles(trackerDir);
+        List<FileEntity> archiveList = fileIO.listAllFiles(archiveDir);
+        long begin = archiveList.stream().map(x->Long.parseLong(x.getFileName().split("\\.")[0])).min(Long::compareTo).orElse(Long.MAX_VALUE);
         long max = trackerList.stream().map(x->Long.parseLong(x.getFileName().split("\\.")[0])).max(Long::compareTo).orElse(Long.MAX_VALUE);
-        for(int i=0;i<=max;i++){
+        for(long i=begin;i<=max;i++){
             URI commitDir = commitRootDir.resolve(i+"/");
             if(!fileIO.exists(commitDir)){
                 continue;
@@ -107,13 +109,15 @@ public class TestStrategy {
         Map<String,String> prop = new HashMap<>();
 
 
+
         fileIO.init(prop);
         URI uri = URI.create("https://oss-cn-zhangjiakou.aliyuncs.com/data-plat/test/dir-meta-test/");
 
+        int maxConcurrent = 16;
         ExecutorService executorService = Executors.newFixedThreadPool(16);
         Map<String, AtomicLong> commitFailedTimes = new HashMap<>();
-        CountDownLatch countDownLatch = new CountDownLatch(10);
-        for(int t = 0;t<16;t++){
+        CountDownLatch countDownLatch = new CountDownLatch(maxConcurrent);
+        for(int t = 0;t<maxConcurrent;t++){
             executorService.execute(()->{
                 countDownLatch.countDown();
                 try {
@@ -141,7 +145,7 @@ public class TestStrategy {
         System.out.println(commitFailedTimes);
         long end = System.currentTimeMillis();
         System.out.println("耗时:"+((end-begin)*1.0/1000)+"s");
-        assertAllCommitIsCorrect(fileIO,uri.resolve("tracker/"),uri.resolve("commit/"),new FileTrackerCommitStrategy());
+        assertAllCommitIsCorrect(fileIO,uri.resolve("archive/"),uri.resolve("tracker/"),uri.resolve("commit/"),new FileTrackerCommitStrategy());
     }
 
 }
