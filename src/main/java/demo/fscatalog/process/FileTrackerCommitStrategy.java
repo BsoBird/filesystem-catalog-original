@@ -3,6 +3,7 @@ package demo.fscatalog.process;
 import demo.fscatalog.io.FileIO;
 import demo.fscatalog.io.entity.FileEntity;
 import demo.fscatalog.io.entity.Pair;
+import demo.fscatalog.io.util.UniIdUtils;
 
 import java.io.IOException;
 import java.net.URI;
@@ -14,9 +15,13 @@ import java.util.stream.Collectors;
 
 /**
  * Committing using the FileTracker policy is safe as long as the file system provides single-file
- * atomic write operations and list operations. It is thread-safe.
- * This policy applies to almost all file systems.
+ * atomic write operations and list operations. It is thread-safe(may not.....).
+ * This policy applies to almost all file systems(maybe this strategy is a bad strategy).
+ *
+ * note: 根据测试结果,我们发现了一个问题,在对象存储系统中,文件写入时,别的客户端并不是立刻可见.
+ * 这导致list出来的结果与实际的文件有一定偏差.
  */
+@Deprecated
 public class FileTrackerCommitStrategy implements CommitStrategy{
     public static final String COMMIT_HINT = "COMMIT-HINT.TXT";
     // just demo,no config
@@ -176,7 +181,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
     }
 
     private void checkCommitSuccess(FileIO fileIO, URI commitDir, String commitFileName, URI commitHint) throws InterruptedException, IOException {
-        TimeUnit.MICROSECONDS.sleep(fileIO.getFileSystemTimeAccuracy());
+        TimeUnit.MILLISECONDS.sleep(fileIO.getFileSystemTimeAccuracy());
         List<FileEntity> fileEntityList = fileIO.listAllFiles(commitDir);
         FileEntity earliestCommitFile = findEarliestCommit(fileEntityList);
         if(earliestCommitFile==null){
@@ -207,7 +212,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
 
     private String writeCommitInfo(FileIO fileIO, URI commitDir, String hintVersion) throws IOException {
         fileIO.createDirectory(commitDir);
-        String commitFileName = UUID.randomUUID().toString();
+        String commitFileName = UniIdUtils.getUniId();
         URI commitFile = commitDir.resolve(commitFileName);
         String content = String.format("CommitVersion:[%s],commitFile:[%s]", hintVersion,commitFileName);
         fileIO.writeFile(commitFile,content,false);
@@ -230,7 +235,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
                 // 如果依然没有HINT,那么寻找到时间最小,名称最小的文件,写HINT,然后失败抛出异常.
                 TimeUnit.MICROSECONDS.sleep(fileIO.getFileSystemTimeAccuracy());
                 List<FileEntity> commits = fileIO.listAllFiles(commitDir);
-                FileEntity checkHintAgain =  alreadyExistsCommit.stream().filter(x->x.getFileName().equals(COMMIT_HINT)).findAny().orElse(null);
+                FileEntity checkHintAgain =  commits.stream().filter(x->x.getFileName().equals(COMMIT_HINT)).findAny().orElse(null);
                 if(checkHintAgain==null){
                     FileEntity earliestCommitFile = findEarliestCommit(commits);
                     if(earliestCommitFile==null){

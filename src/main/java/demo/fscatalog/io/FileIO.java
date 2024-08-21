@@ -11,9 +11,9 @@ import java.util.concurrent.TimeUnit;
 
 public interface FileIO extends Closeable {
 
-    void init(Map<String, String> properties);
+    void init(Map<String, String> properties) throws Exception;
 
-    void writeFile(URI path,String content,boolean overwrite) throws IOException;
+    void writeFile(URI path,String content,boolean atomicOverwrite) throws IOException;
 
     void createDirectory(URI path) throws IOException;
 
@@ -27,12 +27,20 @@ public interface FileIO extends Closeable {
         throw new UnsupportedOperationException();
     }
 
+    @Deprecated
     default boolean lock(String lockInfo,long timeout, TimeUnit unit) throws IOException {
         // WE CAN IMPLEMENT A FILE BASED LOCK.
         throw new UnsupportedOperationException();
     }
+
+    @Deprecated
     default void unlock(){
         // WE CAN IMPLEMENT A FILE BASED LOCK.
+        throw new UnsupportedOperationException();
+    }
+
+    @Deprecated
+    default void appendWrite(URI file,String content){
         throw new UnsupportedOperationException();
     }
 
@@ -46,6 +54,7 @@ public interface FileIO extends Closeable {
         throw new UnsupportedOperationException();
     }
 
+    @Deprecated
     default long getFileSystemTimeAccuracy(){
         return 1000L;
     }

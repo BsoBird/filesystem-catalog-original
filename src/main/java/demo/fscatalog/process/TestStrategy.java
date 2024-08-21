@@ -4,6 +4,7 @@ import demo.fscatalog.io.FileIO;
 import demo.fscatalog.io.entity.FileEntity;
 import demo.fscatalog.io.impl.LocalFileIO;
 import demo.fscatalog.io.impl.OSSFileIO;
+import demo.fscatalog.io.util.UniIdUtils;
 
 import java.io.File;
 import java.io.InterruptedIOException;
@@ -22,10 +23,19 @@ public class TestStrategy {
 //        testOssFileTracker();
 //        testLocalFileTracker();
 //        testLocalFileTrackerWithConcurrent();
-        testOssFileTrackerWithConcurrent();
+//        testOssFileTrackerWithConcurrent();
 //        deleteOssDir();
+
+        testOssFileTrackerWithConcurrentV2();
     }
 
+    private static void testLocalFileTrackerV2() throws Exception {
+        FileIO fileIO = new LocalFileIO();
+        fileIO.init(new HashMap<>());
+        File file = new File("D:\\var\\log\\test-table");
+        CommitStrategy commitStrategy = new FileTrackerCommitStrategyV2();
+        commitStrategy.commit(fileIO,file.toURI());
+    }
 
     private static void testLocalFileTracker() throws Exception {
         FileIO fileIO = new LocalFileIO();
@@ -90,11 +100,13 @@ public class TestStrategy {
             if(!fileIO.exists(commitDir)){
                 continue;
             }
-            FileEntity earliestCommitFile = fileTrackerCommitStrategy.findEarliestCommit(trackerList);
+            List<FileEntity> commitLists = fileIO.listAllFiles(commitDir);
+            FileEntity earliestCommitFile = fileTrackerCommitStrategy.findEarliestCommit(commitLists);
             URI hintFile = commitDir.resolve(FileTrackerCommitStrategy.COMMIT_HINT);
             String hintCommit = fileIO.read(hintFile);
-            if(hintCommit.equals(earliestCommitFile.getFileName())){
-                throw new RuntimeException(String.format("提交失败,理论正确的提交是[%s],实际的提交是[%s],提交版本[%s]",earliestCommitFile.getFileName(),hintCommit,i));
+            if(!hintCommit.equals(earliestCommitFile.getFileName())){
+                FileEntity commitHintEntity = commitLists.stream().filter(x->hintCommit.equals(x.getFileName())).findAny().orElse(null);
+                throw new RuntimeException(String.format("提交失败,理论正确的提交是[%s],实际的提交是[%s],提交版本[%s]",earliestCommitFile,commitHintEntity,i));
             }else{
                 System.out.println(String.format("版本[%s]的提交是正确的!",i));
             }
@@ -107,7 +119,6 @@ public class TestStrategy {
         long begin = System.currentTimeMillis();
         OSSFileIO fileIO = new OSSFileIO();
         Map<String,String> prop = new HashMap<>();
-
 
 
         fileIO.init(prop);
@@ -126,7 +137,7 @@ public class TestStrategy {
                     throw new RuntimeException(e);
                 }
                 FileTrackerCommitStrategy commitStrategy = new FileTrackerCommitStrategy();
-                for(int i = 0;i<200;i++){
+                for(int i = 0;i<100;i++){
                     try {
                         commitStrategy.commit(fileIO,uri);
                     } catch (Exception e) {
@@ -146,6 +157,51 @@ public class TestStrategy {
         long end = System.currentTimeMillis();
         System.out.println("耗时:"+((end-begin)*1.0/1000)+"s");
         assertAllCommitIsCorrect(fileIO,uri.resolve("archive/"),uri.resolve("tracker/"),uri.resolve("commit/"),new FileTrackerCommitStrategy());
+    }
+
+    private static void testOssFileTrackerWithConcurrentV2() throws Exception {
+        long begin = System.currentTimeMillis();
+        OSSFileIO fileIO = new OSSFileIO();
+        Map<String,String> prop = new HashMap<>();
+
+
+        fileIO.init(prop);
+        URI uri = URI.create("https://oss-cn-zhangjiakou.aliyuncs.com/data-plat/test/dir-meta-test/");
+
+        int maxConcurrent = 16;
+        ExecutorService executorService = Executors.newFixedThreadPool(16);
+        Map<String, AtomicLong> commitFailedTimes = new HashMap<>();
+        CommitStrategy commitStrategy = new FileTrackerCommitStrategyV2();
+//        CountDownLatch countDownLatch = new CountDownLatch(maxConcurrent);
+        for(int t = 0;t<maxConcurrent;t++){
+            executorService.execute(()->{
+//                countDownLatch.countDown();
+//                try {
+//                    countDownLatch.await();
+//                } catch (InterruptedException e) {
+//                    throw new RuntimeException(e);
+//                }
+
+                for(int i = 0;i<100;i++){
+                    try {
+                        commitStrategy.commit(fileIO,uri);
+                    } catch (Exception e) {
+                        if(e instanceof InterruptedIOException){
+                            e.printStackTrace();
+                        }
+                        e.printStackTrace();
+                        AtomicLong time = commitFailedTimes.computeIfAbsent(Thread.currentThread().getName(), (key)-> new AtomicLong(0));
+                        time.addAndGet(1);
+                    }
+                }
+            });
+        }
+        executorService.shutdown();
+        executorService.awaitTermination(5, TimeUnit.MINUTES);
+        System.out.println(commitFailedTimes);
+        long end = System.currentTimeMillis();
+        System.out.println("耗时:"+((end-begin)*1.0/1000)+"s");
+
     }
 
 }

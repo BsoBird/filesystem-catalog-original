@@ -50,13 +50,16 @@ public class OSSFileIO implements FileIO {
     }
 
     @Override
-    public void writeFile(URI path, String content, boolean overwrite) {
+    public void writeFile(URI path, String content, boolean atomicOverwrite) {
         String pathStr = path.getPath();
         String key = getOssKey(pathStr);
         final PutObjectRequest request = new PutObjectRequest(bucketName, key, new ByteArrayInputStream(content.getBytes()));
-        request.setMetadata(getOssDefaultMetadata(overwrite));
+        request.setMetadata(getOssDefaultMetadata(atomicOverwrite));
         request.addHeader("Cache-Control", "no-store");
         oss.putObject(request);
+        if(!oss.doesObjectExist(bucketName,key)){
+            throw new RuntimeException("writeFailed?");
+        }
     }
 
     @Override
@@ -154,5 +157,12 @@ public class OSSFileIO implements FileIO {
             nextMarker = objectListing.getNextMarker();
         } while (objectListing.isTruncated());
         return result;
+    }
+    public long getFileSystemTimeAccuracy(){
+        return 5000L;
+    }
+
+    public void appendFile(){
+//        oss.appendObject()
     }
 }

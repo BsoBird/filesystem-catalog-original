@@ -2,6 +2,7 @@ package demo.fscatalog.io.impl;
 
 import demo.fscatalog.io.entity.FileEntity;
 import demo.fscatalog.io.FileIO;
+import demo.fscatalog.io.util.UniIdUtils;
 
 import java.io.*;
 import java.net.URI;
@@ -37,7 +38,7 @@ public class LocalFileIO implements FileIO {
     }
 
     @Override
-    public void writeFile(URI path, String content, boolean overwrite) throws IOException{
+    public void writeFile(URI path, String content, boolean atomicOverwrite) throws IOException{
 //        if(!path.getPath().startsWith(rootPath)){
 //            throw new IllegalArgumentException("not under root path");
 //        }
@@ -46,21 +47,21 @@ public class LocalFileIO implements FileIO {
             throw new IllegalArgumentException("can not write to a directory");
         }
         file.getParentFile().mkdirs();
-        String uuid = UUID.randomUUID().toString();
+        String uuid = UniIdUtils.getUniId();
         File tempFile = File.createTempFile(uuid,"");
         try(FileWriter writer = new FileWriter(tempFile)){
             writer.write(content);
             writer.flush();
         }
         if(OS.contains("windows")){
-            if(overwrite){
-                file.delete();
+            if(atomicOverwrite){
+                throw new UnsupportedEncodingException("unsupport atomic overwrite");
             }
             if(!tempFile.renameTo(file)){
                 throw new FileAlreadyExistsException("Already exists :"+file.getAbsolutePath());
             }
         }else{
-            CopyOption copyOption = overwrite?StandardCopyOption.REPLACE_EXISTING:StandardCopyOption.ATOMIC_MOVE;
+            CopyOption copyOption = atomicOverwrite?StandardCopyOption.REPLACE_EXISTING:StandardCopyOption.ATOMIC_MOVE;
             Files.move(tempFile.toPath(),file.toPath(), copyOption);
         }
     }
