@@ -136,6 +136,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         String hintInfo = commitFileName+"@"+subCommitVersion;
         fileIO.writeFile(commitSubHintFile,hintInfo,false);
         URI debugFile = commitSubHintDir.resolve(commitFileName);
+        // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
         fileIO.writeFile(debugFile,commitFileName,false);
 
         trackerList = fileIO.listAllFiles(trackerDir);
