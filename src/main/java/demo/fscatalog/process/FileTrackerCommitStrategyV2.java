@@ -145,8 +145,9 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         cleanTooOldCommit(fileIO,archiveDir,commitDirRoot);
     }
 
-    //todo: 无论提交成功与否,可能客户端都需要写入一次archive
+
     private void moveTooOldTracker2Archive(FileIO fileIO, List<FileEntity> trackerList, long maxVersionAfterCommit, URI archiveDir, URI trackerDir) throws IOException {
+        //todo: 无论提交成功与否,可能客户端都需要写入一次archive
         List<FileEntity> needMove2Archive = trackerList.stream()
                 .filter(x->{
                     String name = x.getFileName();
@@ -157,6 +158,9 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 
         for (FileEntity archiveFile : needMove2Archive) {
             String expireTimeStamp = String.valueOf(System.currentTimeMillis()+CLEAN_TTL);
+            //todo: 在文件名中添加时间戳,主要是想节省IO,通过文件名称就可以提取一些关键信息.
+            // 但是这样做有个问题,如果多个客户端同时执行move2Archive,同一个tracker可能会产生
+            // 多个archive记录.这样会稍微干扰清理.暂时先不管这个问题.
             String archiveFileName = archiveFile.getFileName()+"@"+expireTimeStamp;
             URI dropTracker = trackerDir.resolve(archiveFile.getFileName());
             URI archiveEntity = archiveDir.resolve(archiveFileName);
