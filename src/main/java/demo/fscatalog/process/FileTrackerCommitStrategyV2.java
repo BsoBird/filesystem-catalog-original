@@ -16,6 +16,9 @@ import java.util.stream.Collectors;
  *
  * 理论上,只要文件系统支持原子写入,那么它可以适用与任何文件系统.
  *
+ * 这个策略有一个坏处,如果上一次提交失败了,并且没有产生HINT文件,那么下一次提交还是会失败.
+ * 因此需要下一次提交产生HINT文件,但是产生HINT文件走的是失败退出的逻辑.
+ *
  */
 public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 
