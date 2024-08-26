@@ -108,11 +108,16 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
                 Map<String,List<FileEntity>> groupedCommitInfo = getCommitInfoByCommitGroup(commitDetails);
                 if(groupedCommitInfo.size()==1){
                     String commitFileName = groupedCommitInfo.keySet().stream().findAny().orElse(null);
-                    String hintInfo = commitFileName+"@"+subCommitVersion;
-                    fileIO.writeFile(commitSubHintFile,hintInfo,false);
-                    URI debugFile = commitSubHintDir.resolve(commitFileName);
-                    // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
-                    fileIO.writeFile(debugFile,commitFileName,false);
+                    if(groupedCommitInfo.get(commitFileName).size()==2){
+                        // 如果只有一个分组,那么可能之前的客户端出现了IO异常失败了,由于没有出现并发问题,我们补充填写一次HINT信息.然后失败退出.
+                        String hintInfo = commitFileName+"@"+subCommitVersion;
+                        fileIO.writeFile(commitSubHintFile,hintInfo,false);
+                        URI debugFile = commitSubHintDir.resolve(commitFileName);
+                        // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
+                        fileIO.writeFile(debugFile,commitFileName,false);
+                    }else{
+                        fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
+                    }
                 }else{
                     fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
                 }
