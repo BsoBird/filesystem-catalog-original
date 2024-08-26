@@ -6,8 +6,7 @@ import demo.fscatalog.io.util.UniIdUtils;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -106,7 +105,17 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         if(!commitDetails.isEmpty()){
             long latestCommitTimestamp = commitDetails.stream().map(FileEntity::getLastModified).max(Long::compareTo).orElse(Long.MAX_VALUE);
             if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT){
-                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
+                Map<String,List<FileEntity>> groupedCommitInfo = getCommitInfoByCommitGroup(commitDetails);
+                if(groupedCommitInfo.size()==1){
+                    String commitFileName = groupedCommitInfo.keySet().stream().findAny().orElse(null);
+                    String hintInfo = commitFileName+"@"+subCommitVersion;
+                    fileIO.writeFile(commitSubHintFile,hintInfo,false);
+                    URI debugFile = commitSubHintDir.resolve(commitFileName);
+                    // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
+                    fileIO.writeFile(debugFile,commitFileName,false);
+                }else{
+                    fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
+                }
             }
             throw new IllegalStateException("存在多个客户端同时提交!");
         }
@@ -120,10 +129,10 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
                 .filter(x->!x.getFileName().equals(preCommitFileName))
                 .collect(Collectors.toList());
         if(!commitDetails.isEmpty()){
-            long latestCommitTimestamp = commitDetails.stream().map(FileEntity::getLastModified).max(Long::compareTo).orElse(Long.MAX_VALUE);
-            if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT){
-                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
-            }
+//            long latestCommitTimestamp = commitDetails.stream().map(FileEntity::getLastModified).max(Long::compareTo).orElse(Long.MAX_VALUE);
+//            if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT){
+//                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
+//            }
             throw new IllegalStateException("存在多个客户端同时提交!");
         }
         fileIO.writeFile(commitFile,commitFileName,false);
@@ -133,10 +142,10 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
                 .filter(x->!x.getFileName().equals(commitFileName))
                 .collect(Collectors.toList());
         if(!commitDetails.isEmpty()){
-            long latestCommitTimestamp = commitDetails.stream().map(FileEntity::getLastModified).max(Long::compareTo).orElse(Long.MAX_VALUE);
-            if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT){
-                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
-            }
+//            long latestCommitTimestamp = commitDetails.stream().map(FileEntity::getLastModified).max(Long::compareTo).orElse(Long.MAX_VALUE);
+//            if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT){
+//                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
+//            }
             throw new IllegalStateException("存在多个客户端同时提交!");
         }
         String hintInfo = commitFileName+"@"+subCommitVersion;
@@ -149,6 +158,22 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 
         moveTooOldTracker2Archive(fileIO,trackerList,maxCommitVersion,archiveDir,trackerDir);
         cleanTooOldCommit(fileIO,archiveDir,commitDirRoot);
+    }
+
+    private Map<String,List<FileEntity>> getCommitInfoByCommitGroup(List<FileEntity> fileEntityList){
+        Map<String,List<FileEntity>> result = new HashMap<>();
+        fileEntityList.stream()
+                .filter(x->!EXPIRED_HINT.equals(x.getFileName()))
+                .forEach(x->{
+                    String key = x.getFileName();
+                    if(key!=null){
+                        if(key.startsWith(PRE_COMMIT_PREFIX)){
+                            key = key.substring(PRE_COMMIT_PREFIX.length());
+                        }
+                        result.computeIfAbsent(key, k->new ArrayList<>()).add(x);
+                    }
+                });
+        return result;
     }
 
 
