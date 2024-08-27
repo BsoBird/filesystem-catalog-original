@@ -104,7 +104,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
             Pair<Long,List<FileEntity>> resultPair = findNextCommitInfo(fileIO,trackerDir,commitDirRoot);
             long maxVersionAfterCommit = resultPair.getKey();
             fastFailIfDirtyCommit(fileIO, maxVersionAfterCommit, version, commitDir, trackerFile);
-            List<FileEntity> trackerList = fileIO.listAllFiles(trackerDir);
+            List<FileEntity> trackerList = fileIO.listAllFiles(trackerDir,false);
             // 我们是否要清理脏提交?
             // 详见问题3，在这个原型中,我们选择了清理. 我们模仿了hbase的行为.
             // 如果我们要删除一个记录,我们先将它们移动到一个地方记录,然后找个时间删除掉.
@@ -127,7 +127,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
     }
 
     private void cleanTooOldCommit(FileIO fileIO, URI archiveDir, URI commitDirRoot) throws IOException {
-        List<FileEntity> archiveList = fileIO.listAllFiles(archiveDir);
+        List<FileEntity> archiveList = fileIO.listAllFiles(archiveDir,false);
         archiveList.sort(Comparator.comparing((x)-> Long.parseLong(x.getFileName().split("\\.")[0])));
         int maxCleanTimes = Math.min(1,archiveList.size());
         if(archiveList.size()>maxArchiveSize){
@@ -182,7 +182,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
 
     private void checkCommitSuccess(FileIO fileIO, URI commitDir, String commitFileName, URI commitHint) throws InterruptedException, IOException {
         TimeUnit.MILLISECONDS.sleep(fileIO.getFileSystemTimeAccuracy());
-        List<FileEntity> fileEntityList = fileIO.listAllFiles(commitDir);
+        List<FileEntity> fileEntityList = fileIO.listAllFiles(commitDir,false);
         FileEntity earliestCommitFile = findEarliestCommit(fileEntityList);
         if(earliestCommitFile==null){
             throw new RuntimeException("The commit dir disappeared, which shouldn't have happened.");
@@ -234,7 +234,7 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
                 // 如果此时有Hint,那么退出并抛出提交失败异常.
                 // 如果依然没有HINT,那么寻找到时间最小,名称最小的文件,写HINT,然后失败抛出异常.
                 TimeUnit.MICROSECONDS.sleep(fileIO.getFileSystemTimeAccuracy());
-                List<FileEntity> commits = fileIO.listAllFiles(commitDir);
+                List<FileEntity> commits = fileIO.listAllFiles(commitDir,false);
                 FileEntity checkHintAgain =  commits.stream().filter(x->x.getFileName().equals(COMMIT_HINT)).findAny().orElse(null);
                 if(checkHintAgain==null){
                     FileEntity earliestCommitFile = findEarliestCommit(commits);
@@ -268,11 +268,11 @@ public class FileTrackerCommitStrategy implements CommitStrategy{
 
     private Pair<Long,List<FileEntity>> findNextCommitInfo(FileIO fileIO, URI trackerDir, URI commitDir) throws IOException {
         Pair<Long,List<FileEntity>> pair = new Pair<>();
-        List<FileEntity> commitVersionHints = fileIO.listAllFiles(trackerDir);
+        List<FileEntity> commitVersionHints = fileIO.listAllFiles(trackerDir,false);
         long maxVersion = commitVersionHints.stream().map(x->Long.parseLong(x.getFileName().split("\\.")[0]))
                 .max(Long::compareTo)
                 .orElse(0L);
-        List<FileEntity> commitDetails = fileIO.listAllFiles(getCommitDir(commitDir,maxVersion));
+        List<FileEntity> commitDetails = fileIO.listAllFiles(getCommitDir(commitDir,maxVersion),false);
         FileEntity hintFile = commitDetails
                 .stream()
                 .filter(x->COMMIT_HINT.equals(x.getFileName()))

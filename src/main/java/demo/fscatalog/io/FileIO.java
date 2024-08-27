@@ -50,7 +50,12 @@ public interface FileIO extends Closeable {
      * @return
      * @throws IOException
      */
+    @Deprecated
     default List<FileEntity> listAllFiles(URI path) throws IOException{
+        throw new UnsupportedOperationException();
+    }
+
+    default List<FileEntity> listAllFiles(URI path,boolean recursion) throws IOException{
         throw new UnsupportedOperationException();
     }
 

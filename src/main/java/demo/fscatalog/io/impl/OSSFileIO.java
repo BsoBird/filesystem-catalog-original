@@ -129,7 +129,7 @@ public class OSSFileIO implements FileIO {
     }
 
     @Override
-    public List<FileEntity> listAllFiles(URI path) {
+    public List<FileEntity> listAllFiles(URI path,boolean recursion) {
         String nextMarker = null;
         ObjectListing objectListing;
         List<FileEntity> result = new ArrayList<>();
@@ -145,14 +145,27 @@ public class OSSFileIO implements FileIO {
             for (OSSObjectSummary s : sums) {
                 String key = s.getKey();
                 long lastModified = s.getLastModified().getTime();
-                String fileName = key.substring(key.lastIndexOf(OSS_SEPARATOR)+1);
-                if(fileName.isEmpty()){
-                    continue;
+                if(recursion){
+                    String fileName = key.substring(key.lastIndexOf(OSS_SEPARATOR)+1);
+                    if(fileName.isEmpty()){
+                        continue;
+                    }
+                    FileEntity entity = new FileEntity();
+                    entity.setFileName(fileName);
+                    entity.setLastModified(lastModified);
+                    entity.setAbsolutePath(OSS_SEPARATOR+key);
+                    result.add(entity);
+                }else{
+                    String rootPath = getOssKey(path.getPath());
+                    String suffix = key.substring(rootPath.length());
+                    if(!suffix.trim().isEmpty() && !suffix.contains(OSS_SEPARATOR)){
+                        FileEntity entity = new FileEntity();
+                        entity.setFileName(suffix);
+                        entity.setLastModified(lastModified);
+                        entity.setAbsolutePath(OSS_SEPARATOR+key);
+                        result.add(entity);
+                    }
                 }
-                FileEntity entity = new FileEntity();
-                entity.setFileName(fileName);
-                entity.setLastModified(lastModified);
-                result.add(entity);
             }
             nextMarker = objectListing.getNextMarker();
         } while (objectListing.isTruncated());

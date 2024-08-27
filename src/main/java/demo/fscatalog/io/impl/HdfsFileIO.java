@@ -1,6 +1,7 @@
 package demo.fscatalog.io.impl;
 
 import demo.fscatalog.io.FileIO;
+import demo.fscatalog.io.entity.FileEntity;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -10,6 +11,7 @@ import org.apache.hadoop.fs.Path;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 public class HdfsFileIO implements FileIO {

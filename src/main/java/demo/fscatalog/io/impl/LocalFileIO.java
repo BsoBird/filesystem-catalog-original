@@ -114,7 +114,39 @@ public class LocalFileIO implements FileIO {
     }
 
     @Override
-    public List<FileEntity> listAllFiles(URI path) throws IOException {
+    public List<FileEntity> listAllFiles(URI path,boolean recursion) throws IOException {
+        if(recursion){
+            return getAllFilesWithRecursion(path);
+        }else{
+            return getAllFilesWithOutRecursion(path);
+        }
+    }
+
+    private List<FileEntity> getAllFilesWithRecursion(URI path) throws IOException {
+        List<FileEntity> fileList = new ArrayList<>();
+        List<Path> walkResult = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(new File(path).toPath())) {
+            walk.sorted(Comparator.reverseOrder())
+                    .forEach(walkResult::add);
+        }catch (NoSuchFileException e){
+            //do-nothing
+        }
+        for (Path path1 : walkResult) {
+            File file1 = path1.toFile();
+            if(file1.isFile()){
+                String name = file1.getName();
+                long lastModified = file1.lastModified();
+                FileEntity entity = new FileEntity();
+                entity.setFileName(name);
+                entity.setLastModified(lastModified);
+                entity.setAbsolutePath(file1.getAbsolutePath());
+                fileList.add(entity);
+            }
+        }
+        return fileList;
+    }
+
+    private List<FileEntity> getAllFilesWithOutRecursion(URI path){
         List<FileEntity> fileList = new ArrayList<>();
         File file = new File(path);
         File [] files = file.listFiles();
@@ -127,8 +159,10 @@ public class LocalFileIO implements FileIO {
             FileEntity entity = new FileEntity();
             entity.setFileName(name);
             entity.setLastModified(lastModified);
+            entity.setAbsolutePath(file1.getAbsolutePath());
             fileList.add(entity);
         }
         return fileList;
     }
+
 }

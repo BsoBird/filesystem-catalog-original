@@ -42,7 +42,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         fileIO.createDirectory(commitDirRoot);
         fileIO.createDirectory(archiveDir);
 
-        List<FileEntity> trackerList = fileIO.listAllFiles(trackerDir);
+        List<FileEntity> trackerList = fileIO.listAllFiles(trackerDir,false);
         long maxCommitVersion = trackerList
                 .stream()
                 .map(x->Long.parseLong(x.getFileName().split("\\.")[0]))
@@ -79,7 +79,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         fileIO.createDirectory(commitSubTrackerDir);
         fileIO.createDirectory(commitSubHintDir);
 
-        List<FileEntity> subTrackerList =fileIO.listAllFiles(commitSubTrackerDir);
+        List<FileEntity> subTrackerList =fileIO.listAllFiles(commitSubTrackerDir,false);
         long subCommitVersion = subTrackerList
                 .stream()
                 .map(x->Long.parseLong(x.getFileName().split("\\.")[0]))
@@ -101,7 +101,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
             fileIO.writeFile(subTrackerFile,subCommitVersion+"",false);
         }
         fileIO.createDirectory(commitDetailDir);
-        List<FileEntity> commitDetails = fileIO.listAllFiles(commitDetailDir);
+        List<FileEntity> commitDetails = fileIO.listAllFiles(commitDetailDir,false);
         if(!commitDetails.isEmpty()){
             Map<String,List<FileEntity>> groupedCommitInfo = getCommitInfoByCommitGroup(commitDetails);
             List<List<FileEntity>> counter = groupedCommitInfo.values().stream().filter(x->x.size()==1).collect(Collectors.toList());
@@ -135,7 +135,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         URI preCommitFile = commitDetailDir.resolve(preCommitFileName);
         URI commitFile = commitDetailDir.resolve(commitFileName);
         fileIO.writeFile(preCommitFile,preCommitFileName,false);
-        commitDetails = fileIO.listAllFiles(commitDetailDir)
+        commitDetails = fileIO.listAllFiles(commitDetailDir,false)
                 .stream()
                 .filter(x->!x.getFileName().equals(preCommitFileName))
                 .collect(Collectors.toList());
@@ -147,7 +147,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
             throw new IllegalStateException("存在多个客户端同时提交!");
         }
         fileIO.writeFile(commitFile,commitFileName,false);
-        commitDetails = fileIO.listAllFiles(commitDetailDir)
+        commitDetails = fileIO.listAllFiles(commitDetailDir,false)
                 .stream()
                 .filter(x->!x.getFileName().equals(preCommitFileName))
                 .filter(x->!x.getFileName().equals(commitFileName))
@@ -165,7 +165,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
         fileIO.writeFile(debugFile,commitFileName,false);
 
-        trackerList = fileIO.listAllFiles(trackerDir);
+        trackerList = fileIO.listAllFiles(trackerDir,false);
 
         moveTooOldTracker2Archive(fileIO,trackerList,maxCommitVersion,archiveDir,trackerDir);
         cleanTooOldCommit(fileIO,archiveDir,commitDirRoot);
@@ -214,7 +214,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
     }
 
     private void cleanTooOldCommit(FileIO fileIO, URI archiveDir, URI commitDirRoot) throws IOException {
-        List<FileEntity> archiveList = fileIO.listAllFiles(archiveDir);
+        List<FileEntity> archiveList = fileIO.listAllFiles(archiveDir,false);
         archiveList.sort(Comparator.comparing(x-> Long.parseLong(x.getFileName().split("\\.")[0])));
         int maxCleanTimes = Math.min(1,archiveList.size());
         if(archiveList.size()>maxArchiveSize){
