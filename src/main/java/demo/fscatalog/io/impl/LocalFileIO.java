@@ -1,17 +1,18 @@
 package demo.fscatalog.io.impl;
 
-import demo.fscatalog.io.entity.FileEntity;
 import demo.fscatalog.io.FileIO;
+import demo.fscatalog.io.entity.FileEntity;
 import demo.fscatalog.io.util.UniIdUtils;
 
 import java.io.*;
 import java.net.URI;
 import java.nio.file.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
-import static demo.fscatalog.io.util.UniIdUtils.NANO_ID;
-import static demo.fscatalog.io.util.UniIdUtils.SNOW_FLAKE;
 
 public class LocalFileIO implements FileIO {
     private String OS = null;
@@ -50,7 +51,7 @@ public class LocalFileIO implements FileIO {
             throw new IllegalArgumentException("can not write to a directory");
         }
         file.getParentFile().mkdirs();
-        String uuid = UniIdUtils.getUniId(SNOW_FLAKE);
+        String uuid = UniIdUtils.getUniId(UniIdUtils.SNOW_FLAKE);
         File tempFile = File.createTempFile(uuid,"");
         try(FileWriter writer = new FileWriter(tempFile)){
             writer.write(content);
