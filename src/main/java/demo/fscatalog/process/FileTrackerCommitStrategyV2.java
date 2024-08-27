@@ -28,7 +28,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
     private static final Integer maxSaveNum = 2;
     private static final Integer maxArchiveSize = 100;
     private static final Integer archiveBatchCleanMaxSize = 20;
-    private static final long TTL_PRE_COMMIT = 30 * 1000;
+    private static final long TTL_PRE_COMMIT = 30*1000L;
     // just demo,no config
     private static final long CLEAN_TTL = 30L * 1000;
 
@@ -103,21 +103,27 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         fileIO.createDirectory(commitDetailDir);
         List<FileEntity> commitDetails = fileIO.listAllFiles(commitDetailDir);
         if(!commitDetails.isEmpty()){
+            Map<String,List<FileEntity>> groupedCommitInfo = getCommitInfoByCommitGroup(commitDetails);
+            List<List<FileEntity>> counter = groupedCommitInfo.values().stream().filter(x->x.size()==1).collect(Collectors.toList());
+
+            //如果我们发现多个PRE-COMMIT开头的文件,那代表有多个客户端正在提交,这次提交肯定会失败,写入EXPIRE后滚动.
+            if(counter.size()==groupedCommitInfo.size() && groupedCommitInfo.size()>1){
+                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
+                throw new IllegalStateException("存在多个客户端同时提交!");
+            }
+
             long latestCommitTimestamp = commitDetails.stream().map(FileEntity::getLastModified).max(Long::compareTo).orElse(Long.MAX_VALUE);
-            if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT){
-                Map<String,List<FileEntity>> groupedCommitInfo = getCommitInfoByCommitGroup(commitDetails);
-                if(groupedCommitInfo.size()==1){
-                    String commitFileName = groupedCommitInfo.keySet().stream().findAny().orElse(null);
-                    if(groupedCommitInfo.get(commitFileName).size()==2){
-                        // 如果只有一个分组,那么可能之前的客户端出现了IO异常失败了,由于没有出现并发问题,我们补充填写一次HINT信息.然后失败退出.
-                        String hintInfo = commitFileName+"@"+subCommitVersion;
-                        fileIO.writeFile(commitSubHintFile,hintInfo,false);
-                        URI debugFile = commitSubHintDir.resolve(commitFileName);
-                        // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
-                        fileIO.writeFile(debugFile,commitFileName,false);
-                    }else{
-                        fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
-                    }
+            String commitFileName = groupedCommitInfo.keySet().stream().findAny().orElse(null);
+            //如果有客户端完成了2阶段提交,但是没写入VERSION-HINT,如果提交文件只有一个客户端写入了2阶段的提交文件,
+            //那么补充写入一次VERSION-HINT. 否则,写入EXPIRE标识.滚动至下一个提交空间.
+            if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT && !fileIO.exists(commitSubHintFile)){
+                if(groupedCommitInfo.size()==1 && groupedCommitInfo.get(commitFileName).size()==2){
+                    // 如果只有一个分组,那么可能之前的客户端出现了IO异常失败了,由于没有出现并发问题,我们补充填写一次HINT信息.然后失败退出.
+                    String hintInfo = commitFileName+"@"+subCommitVersion;
+                    fileIO.writeFile(commitSubHintFile,hintInfo,false);
+                    URI debugFile = commitSubHintDir.resolve(commitFileName);
+                    // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
+                    fileIO.writeFile(debugFile,commitFileName,false);
                 }else{
                     fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
                 }
