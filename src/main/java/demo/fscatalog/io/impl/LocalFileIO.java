@@ -10,6 +10,9 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.stream.Stream;
 
+import static demo.fscatalog.io.util.UniIdUtils.NANO_ID;
+import static demo.fscatalog.io.util.UniIdUtils.SNOW_FLAKE;
+
 public class LocalFileIO implements FileIO {
     private String OS = null;
     @Override
@@ -47,7 +50,7 @@ public class LocalFileIO implements FileIO {
             throw new IllegalArgumentException("can not write to a directory");
         }
         file.getParentFile().mkdirs();
-        String uuid = UniIdUtils.getUniId();
+        String uuid = UniIdUtils.getUniId(SNOW_FLAKE);
         File tempFile = File.createTempFile(uuid,"");
         try(FileWriter writer = new FileWriter(tempFile)){
             writer.write(content);
@@ -55,10 +58,21 @@ public class LocalFileIO implements FileIO {
         }
         if(OS.contains("windows")){
             if(atomicOverwrite){
-                throw new UnsupportedEncodingException("unsupport atomic overwrite");
-            }
-            if(!tempFile.renameTo(file)){
-                throw new FileAlreadyExistsException("Already exists :"+file.getAbsolutePath());
+                String fileName = tempFile.getName();
+                File sameRootTmpFile = new File(file.getParentFile().toURI().resolve(fileName));
+                try{
+                    //In windows operating system, atomic renaming can only work under the same disk drive, that is, under the same disk letter.
+                    if(!tempFile.renameTo(sameRootTmpFile)){
+                        throw new FileAlreadyExistsException("Already exists :"+sameRootTmpFile.getAbsolutePath());
+                    }
+                    Files.move(sameRootTmpFile.toPath(),file.toPath(), StandardCopyOption.ATOMIC_MOVE);
+                }finally {
+                    Files.deleteIfExists(sameRootTmpFile.toPath());
+                }
+            }else{
+                if(!tempFile.renameTo(file)){
+                    throw new FileAlreadyExistsException("Already exists :"+file.getAbsolutePath());
+                }
             }
         }else{
             CopyOption copyOption = atomicOverwrite?StandardCopyOption.REPLACE_EXISTING:StandardCopyOption.ATOMIC_MOVE;
