@@ -4,15 +4,15 @@ import demo.fscatalog.io.FileIO;
 import demo.fscatalog.io.entity.FileEntity;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.*;
 
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
 
 public class HdfsFileIO implements FileIO {
     private String userName;
@@ -35,9 +35,10 @@ public class HdfsFileIO implements FileIO {
         if(path.getPath().endsWith("/")){
             throw new UnsupportedOperationException();
         }
-        try(
-                FSDataOutputStream fos =  fs.create(new Path(path),atomicOverwrite)
-        ){
+        if(!path.getScheme().equals("hdfs")){
+            throw new UnsupportedOperationException("only HDFS files are supported");
+        }
+        try(FSDataOutputStream fos =  fs.create(new Path(path),atomicOverwrite)){
             IOUtils.write(content, fos, StandardCharsets.UTF_8);
         }
     }
@@ -48,6 +49,24 @@ public class HdfsFileIO implements FileIO {
             throw new UnsupportedOperationException();
         }
         fs.mkdirs(new Path(path));
+    }
+
+    @Override
+    public List<FileEntity> listAllFiles(URI path, boolean recursion) throws IOException {
+        List<FileEntity> files = new ArrayList<>();
+        RemoteIterator<LocatedFileStatus> iterator =  fs.listFiles(new Path(path), recursion);
+        while(iterator.hasNext()){
+            LocatedFileStatus status = iterator.next();
+            long modificationTime = status.getModificationTime();
+            String fileName = status.getPath().getName();
+            String absPath = path.getPath();
+            FileEntity file = new FileEntity();
+            file.setFileName(fileName);
+            file.setLastModified(modificationTime);
+            file.setAbsolutePath(absPath);
+            files.add(file);
+        }
+        return files;
     }
 
     @Override

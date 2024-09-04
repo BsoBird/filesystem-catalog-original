@@ -1,18 +1,19 @@
 package demo.fscatalog.io.impl;
 
 import demo.fscatalog.io.FileIO;
+import demo.fscatalog.io.entity.FileEntity;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.*;
 
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
-//todo: 限制url只能是s3a
+//todo: Restrict url to S3A protocol only
 public class HdfsAdapterS3FileIO implements FileIO {
     private String userName;
     private Configuration conf;
@@ -34,11 +35,32 @@ public class HdfsAdapterS3FileIO implements FileIO {
         if(path.getPath().endsWith("/")){
             throw new UnsupportedOperationException();
         }
+        if(!path.getScheme().equals("s3a")){
+            throw new UnsupportedOperationException("only S3 files are supported");
+        }
         try(
                 FSDataOutputStream fos =  fs.create(new Path(path),atomicOverwrite)
         ){
             IOUtils.write(content, fos, StandardCharsets.UTF_8);
         }
+    }
+
+    @Override
+    public List<FileEntity> listAllFiles(URI path, boolean recursion) throws IOException {
+        List<FileEntity> files = new ArrayList<>();
+        RemoteIterator<LocatedFileStatus> iterator =  fs.listFiles(new Path(path), recursion);
+        while(iterator.hasNext()){
+            LocatedFileStatus status = iterator.next();
+            long modificationTime = status.getModificationTime();
+            String fileName = status.getPath().getName();
+            String absPath = path.getPath();
+            FileEntity file = new FileEntity();
+            file.setFileName(fileName);
+            file.setLastModified(modificationTime);
+            file.setAbsolutePath(absPath);
+            files.add(file);
+        }
+        return files;
     }
 
     @Override

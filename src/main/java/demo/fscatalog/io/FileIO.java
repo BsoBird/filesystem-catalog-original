@@ -29,13 +29,13 @@ public interface FileIO extends Closeable {
 
     @Deprecated
     default boolean lock(String lockInfo,long timeout, TimeUnit unit) throws IOException {
-        // WE CAN IMPLEMENT A FILE BASED LOCK.
+        //TODO: WE CAN IMPLEMENT A FILE BASED LOCK.
         throw new UnsupportedOperationException();
     }
 
     @Deprecated
     default void unlock(){
-        // WE CAN IMPLEMENT A FILE BASED LOCK.
+        //TODO: WE CAN IMPLEMENT A FILE BASED LOCK.
         throw new UnsupportedOperationException();
     }
 
@@ -61,6 +61,7 @@ public interface FileIO extends Closeable {
 
     @Deprecated
     default long getFileSystemTimeAccuracy(){
+        // Maybe it's not useful. We should delete it.
         return 1000L;
     }
 
