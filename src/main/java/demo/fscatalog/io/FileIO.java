@@ -13,6 +13,20 @@ public interface FileIO extends Closeable {
 
     void init(Map<String, String> properties) throws Exception;
 
+    /**
+     * Only write a single file.
+     * <p>
+     * In addition to this,
+     * there is no guarantee that the behavior of multiple file systems will be consistent.
+     * For example, HDFS does not support atomicOverwrite, S3 can only atomicOverwrite.
+     * <p>
+     * If a fileIo implementation does not work with the current default settings,
+     * the user should reimplement the method.
+     */
+    default void writeFileWithNoBehaviourPromises(URI path,String content) throws IOException{
+        writeFile(path,content,false);
+    }
+
     void writeFile(URI path,String content,boolean atomicOverwrite) throws IOException;
 
     void createDirectory(URI path) throws IOException;
@@ -29,13 +43,13 @@ public interface FileIO extends Closeable {
 
     @Deprecated
     default boolean lock(String lockInfo,long timeout, TimeUnit unit) throws IOException {
-        //TODO: WE CAN IMPLEMENT A FILE BASED LOCK.
+        //TODO: WE CAN IMPLEMENT A FILE BASED LOGIC LOCK.
         throw new UnsupportedOperationException();
     }
 
     @Deprecated
     default void unlock(){
-        //TODO: WE CAN IMPLEMENT A FILE BASED LOCK.
+        //TODO: WE CAN IMPLEMENT A FILE BASED LOGIC LOCK.
         throw new UnsupportedOperationException();
     }
 

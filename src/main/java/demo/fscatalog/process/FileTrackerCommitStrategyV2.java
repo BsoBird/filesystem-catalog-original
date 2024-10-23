@@ -72,7 +72,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 
 
         if(!fileIO.exists(trackerFile)){
-            fileIO.writeFile(trackerFile,maxCommitVersion+"",false);
+            fileIO.writeFileWithNoBehaviourPromises(trackerFile,maxCommitVersion+"");
         }
 
         fileIO.createDirectory(commitRootDirWithTracker);
@@ -98,7 +98,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         }
 
         if(!fileIO.exists(subTrackerFile)){
-            fileIO.writeFile(subTrackerFile,subCommitVersion+"",false);
+            fileIO.writeFileWithNoBehaviourPromises(subTrackerFile,subCommitVersion+"");
         }
         fileIO.createDirectory(commitDetailDir);
         List<FileEntity> commitDetails = fileIO.listAllFiles(commitDetailDir,false);
@@ -108,7 +108,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 
             //如果我们发现多个PRE-COMMIT开头的文件,那代表有多个客户端正在提交,这次提交肯定会失败,写入EXPIRE后滚动.
             if(counter.size()==groupedCommitInfo.size() && groupedCommitInfo.size()>1){
-                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
+                fileIO.writeFileWithNoBehaviourPromises(commitDetailExpireHint,"EXPIRED!");
                 throw new IllegalStateException("存在多个客户端同时提交!");
             }
 
@@ -120,12 +120,12 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
                 if(groupedCommitInfo.size()==1 && groupedCommitInfo.get(commitFileName).size()==2){
                     // 如果只有一个分组,那么可能之前的客户端出现了IO异常失败了,由于没有出现并发问题,我们补充填写一次HINT信息.然后失败退出.
                     String hintInfo = commitFileName+"@"+subCommitVersion;
-                    fileIO.writeFile(commitSubHintFile,hintInfo,false);
+                    fileIO.writeFileWithNoBehaviourPromises(commitSubHintFile,hintInfo);
                     URI debugFile = commitSubHintDir.resolve(commitFileName);
                     // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
-                    fileIO.writeFile(debugFile,commitFileName,false);
+                    fileIO.writeFileWithNoBehaviourPromises(debugFile,commitFileName);
                 }else{
-                    fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
+                    fileIO.writeFileWithNoBehaviourPromises(commitDetailExpireHint,"EXPIRED!");
                 }
             }
             throw new IllegalStateException("存在多个客户端同时提交!");
@@ -134,7 +134,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         String preCommitFileName = PRE_COMMIT_PREFIX+commitFileName;
         URI preCommitFile = commitDetailDir.resolve(preCommitFileName);
         URI commitFile = commitDetailDir.resolve(commitFileName);
-        fileIO.writeFile(preCommitFile,preCommitFileName,false);
+        fileIO.writeFileWithNoBehaviourPromises(preCommitFile,preCommitFileName);
         commitDetails = fileIO.listAllFiles(commitDetailDir,false)
                 .stream()
                 .filter(x->!x.getFileName().equals(preCommitFileName))
@@ -146,7 +146,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 //            }
             throw new IllegalStateException("存在多个客户端同时提交!");
         }
-        fileIO.writeFile(commitFile,commitFileName,false);
+        fileIO.writeFileWithNoBehaviourPromises(commitFile,commitFileName);
         commitDetails = fileIO.listAllFiles(commitDetailDir,false)
                 .stream()
                 .filter(x->!x.getFileName().equals(preCommitFileName))
@@ -160,10 +160,10 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
             throw new IllegalStateException("存在多个客户端同时提交!");
         }
         String hintInfo = commitFileName+"@"+subCommitVersion;
-        fileIO.writeFile(commitSubHintFile,hintInfo,false);
+        fileIO.writeFileWithNoBehaviourPromises(commitSubHintFile,hintInfo);
         URI debugFile = commitSubHintDir.resolve(commitFileName);
         // debug一下哪些客户端最终成功提交了,如果我们发现commit文件夹中debug文件数量大于1,则存在问题
-        fileIO.writeFile(debugFile,commitFileName,false);
+        fileIO.writeFileWithNoBehaviourPromises(debugFile,commitFileName);
 
         trackerList = fileIO.listAllFiles(trackerDir,false);
 
@@ -207,7 +207,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
             URI dropTracker = trackerDir.resolve(archiveFile.getFileName());
             URI archiveEntity = archiveDir.resolve(archiveFileName);
             if(!fileIO.exists(archiveEntity)){
-                fileIO.writeFile(archiveEntity,expireTimeStamp,false);
+                fileIO.writeFileWithNoBehaviourPromises(archiveEntity,expireTimeStamp);
             }
             fileIO.delete(dropTracker,false);
         }
