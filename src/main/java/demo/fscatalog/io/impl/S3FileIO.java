@@ -1,10 +1,8 @@
 package demo.fscatalog.io.impl;
 
 
-
 import demo.fscatalog.io.FileIO;
 import demo.fscatalog.io.entity.FileEntity;
-import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.SystemPropertyCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -14,12 +12,14 @@ import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 public class S3FileIO implements FileIO {
     private static final String S3_SEPARATOR = "/";
@@ -27,15 +27,14 @@ public class S3FileIO implements FileIO {
     private String bucketName;
     @Override
     public synchronized void init(Map<String, String> properties) throws Exception {
-//        String url = properties.get("url");
-        bucketName = properties.get("bucket");
-        String accessKey = properties.get("accessKey");
-        String secretKey = properties.get("secretKey");
-        System.setProperty("aws.accessKeyId", accessKey);
-        System.setProperty("aws.secretAccessKey", secretKey);
-        Region region = Region.EU_NORTH_1;
-        SystemPropertyCredentialsProvider provider = SystemPropertyCredentialsProvider.create();
         if(s3client == null) {
+            bucketName = properties.get("bucket");
+            String accessKey = properties.get("accessKey");
+            String secretKey = properties.get("secretKey");
+            Region region = Region.EU_NORTH_1;
+            System.setProperty("aws.accessKeyId", accessKey);
+            System.setProperty("aws.secretAccessKey", secretKey);
+            SystemPropertyCredentialsProvider provider = SystemPropertyCredentialsProvider.create();
             s3client = S3Client.builder()
                     .credentialsProvider(provider)
                     .region(region)
