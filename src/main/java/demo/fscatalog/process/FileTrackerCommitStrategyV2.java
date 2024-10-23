@@ -30,7 +30,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
     private static final Integer archiveBatchCleanMaxSize = 20;
     private static final long TTL_PRE_COMMIT = 30*1000L;
     // just demo,no config
-    private static final long CLEAN_TTL = 30L * 1000;
+    private static final long CLEAN_TTL = 60L * 1000 * 10;
 
     @Override
     public void commit(FileIO fileIO, URI rootPath) throws Exception {
@@ -189,7 +189,8 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 
 
     private void moveTooOldTracker2Archive(FileIO fileIO, List<FileEntity> trackerList, long maxVersionAfterCommit, URI archiveDir, URI trackerDir) throws IOException {
-        //todo: 无论提交成功与否,可能客户端都需要写入一次archive
+        //todo: 小问题:可能无论提交成功与否,客户端都需要写入一次archive,因为过旧的提交总是需要被清理.
+        // 在极限情况下,如果一直提交失败,那么过旧的提交就无法被清理了.
         List<FileEntity> needMove2Archive = trackerList.stream()
                 .filter(x->{
                     String name = x.getFileName();
@@ -200,8 +201,9 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 
         for (FileEntity archiveFile : needMove2Archive) {
             String expireTimeStamp = String.valueOf(System.currentTimeMillis()+CLEAN_TTL);
-            //todo: 在文件名中添加时间戳,主要是想节省IO,通过文件名称就可以提取一些关键信息.
-            // 但是这样做有个问题,如果多个客户端同时执行move2Archive,同一个tracker可能会产生
+            //todo: 在文件名中添加时间戳,通过文件名称就可以提取一些关键信息,例如过期时间,主要是想节省IO,省去一次读取.
+            // 但是这样做有个问题,如果多个客户端同时执行move2Archive,
+            // 由于多个客户端执行的时间未必相同,同一个tracker可能会产生
             // 多个archive记录.这样会稍微干扰清理.暂时先不管这个问题.
             String archiveFileName = archiveFile.getFileName()+"@"+expireTimeStamp;
             URI dropTracker = trackerDir.resolve(archiveFile.getFileName());

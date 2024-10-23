@@ -44,7 +44,9 @@ public class S3FileIO implements FileIO {
 
     @Override
     public void writeFileWithNoBehaviourPromises(URI path, String content) throws IOException {
-        writeFile(path, content,true);
+        if(!exists(path)){
+            writeFile(path, content,true);
+        }
     }
 
     @Override
