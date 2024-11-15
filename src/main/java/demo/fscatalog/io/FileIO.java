@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+// 这个接口中存在众多方法,也许应该拆接口,继承?每种接口涵盖一小部分文件系统的操作.
 public interface FileIO extends Closeable {
 
     void init(Map<String, String> properties) throws Exception;

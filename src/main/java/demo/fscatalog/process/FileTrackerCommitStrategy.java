@@ -20,6 +20,12 @@ import java.util.stream.Collectors;
  *
  * note: 根据测试结果,我们发现了一个问题,在对象存储系统中,文件写入时,别的客户端并不是立刻可见.
  * 这导致list出来的结果与实际的文件有一定偏差.
+ * 因为对象存储内,元数据同步的耗时不可忽略,且不可控.
+ * 例如,写入一个文件,我们可能15:35才能看到15:30写入的文件.并且这个文件的时间还是15:30.
+ * 因此我们无法准确地衡量时间.
+ * 除非我们将 getFileSystemTimeAccuracy()的值给的很大,但这样又很卡提交.
+ *
+ * 算了,废弃吧.这个方案不是非常可靠.
  */
 @Deprecated
 public class FileTrackerCommitStrategy implements CommitStrategy{
