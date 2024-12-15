@@ -171,11 +171,4 @@ public class OSSFileIO implements FileIO {
         } while (objectListing.isTruncated());
         return result;
     }
-    public long getFileSystemTimeAccuracy(){
-        return 5000L;
-    }
-
-    public void appendFile(){
-//        oss.appendObject()
-    }
 }

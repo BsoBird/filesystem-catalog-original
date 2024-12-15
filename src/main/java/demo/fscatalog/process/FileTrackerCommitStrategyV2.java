@@ -109,7 +109,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
             //如果我们发现多个PRE-COMMIT开头的文件,那代表有多个客户端正在提交,这次提交肯定会失败,写入EXPIRE后滚动.
             if(counter.size()==groupedCommitInfo.size() && groupedCommitInfo.size()>1){
                 fileIO.writeFileWithNoBehaviourPromises(commitDetailExpireHint,"EXPIRED!");
-                throw new IllegalStateException("存在多个客户端同时提交!");
+                throw new ConcurrentModificationException("ConcurrentModificationException!");
             }
 
             long latestCommitTimestamp = commitDetails.stream().map(FileEntity::getLastModified).max(Long::compareTo).orElse(Long.MAX_VALUE);
@@ -128,7 +128,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
                     fileIO.writeFileWithNoBehaviourPromises(commitDetailExpireHint,"EXPIRED!");
                 }
             }
-            throw new IllegalStateException("存在多个客户端同时提交!");
+            throw new ConcurrentModificationException("ConcurrentModificationException!");
         }
         String commitFileName = UniIdUtils.getUniId()+".txt";
         String preCommitFileName = PRE_COMMIT_PREFIX+commitFileName;
@@ -144,7 +144,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 //            if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT){
 //                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
 //            }
-            throw new IllegalStateException("存在多个客户端同时提交!");
+            throw new ConcurrentModificationException("ConcurrentModificationException!");
         }
         fileIO.writeFileWithNoBehaviourPromises(commitFile,commitFileName);
         commitDetails = fileIO.listAllFiles(commitDetailDir,false)
@@ -157,7 +157,7 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
 //            if(System.currentTimeMillis() - latestCommitTimestamp > TTL_PRE_COMMIT){
 //                fileIO.writeFile(commitDetailExpireHint,"EXPIRED!",false);
 //            }
-            throw new IllegalStateException("存在多个客户端同时提交!");
+            throw new ConcurrentModificationException("ConcurrentModificationException!");
         }
         String hintInfo = commitFileName+"@"+subCommitVersion;
         fileIO.writeFileWithNoBehaviourPromises(commitSubHintFile,hintInfo);

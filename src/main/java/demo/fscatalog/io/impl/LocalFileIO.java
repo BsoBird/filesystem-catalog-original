@@ -43,9 +43,6 @@ public class LocalFileIO implements FileIO {
 
     @Override
     public void writeFile(URI path, String content, boolean atomicOverwrite) throws IOException{
-//        if(!path.getPath().startsWith(rootPath)){
-//            throw new IllegalArgumentException("not under root path");
-//        }
         File file = new File(path);
         if(file.isDirectory()){
             throw new IllegalArgumentException("can not write to a directory");

@@ -11,6 +11,7 @@ public class UniIdUtils {
     public static final String SNOW_FLAKE = "SNOW_FLAKE";
 
     static {
+        // just for fun
         IdGeneratorOptions options = new IdGeneratorOptions((short)(System.currentTimeMillis()%Short.MAX_VALUE));
         YitIdHelper.setIdGenerator(options);
     }
