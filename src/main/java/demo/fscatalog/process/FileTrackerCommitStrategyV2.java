@@ -56,9 +56,9 @@ public class FileTrackerCommitStrategyV2 implements CommitStrategy{
         URI commitSubHintDir = commitRootDirWithTracker.resolve("sub-hint/");
         URI commitSubHintFile = commitSubHintDir.resolve(COMMIT_HINT);
 
-        // todo: 如果是客户端读取最新版本,而不是执行提交,那么当发现commitSubHintFile
-        //  不存在时,应当将maxCommitVersion - 1 后读取. 如果依然摘不到commitHint,
-        //  应当抛出错误.
+        // todo: 这里只有提交逻辑,没有写读取逻辑.对于读取逻辑而言,首先我们先从tracker里尝试获取当前最大版本(maxCommitVersion),然后查询这个版本下有没有commitHintFile,那么当发现commitHintFile
+        //  不存在时,应当将maxCommitVersion - 1 后读取(我们认为这个最大版本实际上还没有完成有效提交,最新有效版本应当是-1后的版本). 如果-1后依然找不到commitHintFile,
+        //  我们就认为这个表可能已经坏了,应当抛出错误.然后什么都不做.(当然,极端情况下,大量的并发提交也可能导致这个问题,但我们在这里先不考虑这个影响,误报就误报了)
         if(fileIO.exists(commitSubHintFile)){
             maxCommitVersion++;
             // 只向前滚动一次
