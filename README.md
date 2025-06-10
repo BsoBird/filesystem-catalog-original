@@ -1,6 +1,8 @@
 # filesystem-catalog-original
 A prototype for implementing catalog management based on arbitrary file systems.
 
+We want to minimize the complexity of the infrastructure required to build a datalake.
+
 Our goals are:
 - The submission strategy should be pluggable.
 - Try to use the same set of submission logic to complete the submission actions in different file systems.
