@@ -1,62 +1,35 @@
-这个文档中记录一些待讨论的问题和一些原型中没有涉及到的细节:
+This document records some issues to be discussed and some details not covered in the prototype:
 
-1.所有的strategy应该有一个公共的接口类.
+1.All strategies should have a common interface class.
 
-2.**FileIO中,对于一些复杂的操作,例如LIST,不同的FS行为是不一致的,我们是仅在doc中提醒用户它们的行为可能有区别,还是说在方法入参中带入一些参数,
-不同的参数组合表示体现出不同的行为,但是所有的FS实现必须行为一致?**
->举个例子(所有的例子都在FileIO接口中),例如 `renameFile(URI src, URI dst,boolean overwrite)` 这个方法.
-我们使用`boolean overwrite`这个表示来表示rename是否覆盖这种行为. 对于不同的OS,
-要么抛出 UnsupportedOperatorException,要么按照预期实现.
-再或者,`List<FileEntity> listAllFiles(URI path)`. 我们在这个方法中添加了一个doc,提示用户
-这个方法对于不同的fs行为是不一致的.应在最小的范围内使用,以确保获得预期结果. 这两种,我们应该采用哪一种方案?或者说混合?
+2.**In FileIO, for some complex operations such as LIST, the behavior varies across different FS implementations. Should we merely remind users in the documentation that their behaviors may differ, or should we introduce certain parameters in the method arguments where different parameter combinations represent distinct behaviors, while ensuring that the operation results of all FS implementation classes must exhibit consistent behavior?**
+>For example (all examples are in the FileIO interface), such as the method renameFile(URI src, URI dst, boolean overwrite). We use boolean overwrite to indicate whether the rename operation should overwrite. For different OSes, either an UnsupportedOperatorException is thrown, or it is implemented as expected. Or, List<FileEntity> listAllFiles(URI path). We added a doc to this method to alert users that the behavior of this method is inconsistent across different filesystems. It should be used within the smallest scope to ensure expected results. Between these two, which approach should we adopt? Or a mix of both?
 
 
-3.对于FS CATALOG,一个不可避免的问题是脏提交问题. 也就是说,我们总是可能成功提交一个旧的版本进入catalog.例如:IO缓慢.
-如果此时IO出现中断,或者整个系统被KILL-9. 我们会不可避免地残留一些旧的脏提交相关的元数据文件.
-我们是否应该尽最大努力清理它们,或者把他们放在一边不管就可以了,让用户自己去删除这种脏数据?
-如果我们要清理,我们是在commit方法中清理,还是在别的什么地方?对于不同的fs,清理策略可能稍有区别,是否需要统一?如何统一?
-如果我们不清理,理由是什么?请考虑一个1000张表的维护场景,是否会产生很大代价?
+3.For FS CATALOG, an unavoidable issue is the problem of dirty commits. That is to say, we may always successfully commit an old version into the catalog, for example, due to slow IO. If the IO is interrupted at this time, or the entire system is KILL-9, we will inevitably leave behind some old dirty commit-related metadata files. Should we make every effort to clean them up, or simply leave them aside and let users delete such dirty data themselves? If we decide to clean up, should we do it in the commit method, or somewhere else? For different file systems, the cleanup strategies may vary slightly—should they be unified? How to unify them? If we choose not to clean up, what is the rationale? Please consider a maintenance scenario with 1000 tables—would this incur significant costs?
 
-4.如何定义提交成功? 是写入HINT才算提交成功,还是说只要写入了最早的文件就算提交成功?
+4.How to define a successful submission? Does it count as a successful submission only when written to HINT, or is it considered successful as long as it is written to the earliest file?
 
-5.**假设fs catalog支持任意文件系统的可靠提交,那么是否存在一种可能. 绝大多数(或者所有)
-catalog的提交操作都可以委托给fs catalog进行操作?**
+5.**Assuming that the fs catalog supports reliable commits for any file system, is there a possibility that the vast majority (or all) of catalog commit operations can be delegated to the fs catalog for execution?**
 ```
-考虑一个问题,目前aws的glue catalog不支持多客户端安全地并发提交.为了解决这个问题,
-在iceberg-aws模块中,我们甚至为glue-catalog添加了一个分布式锁的实现.
-但这并没有解决所有问题,且增大了复杂度.
+Consider a problem: currently, AWS Glue Catalog does not support safe concurrent submissions from multiple clients. To address this issue, in the iceberg-aws module, we even added a distributed lock implementation for Glue Catalog. However, this did not solve all the problems and increased complexity.
 
-所以,我们换一个角度思考,如果fs catalog足够可靠,假设glue catalog 中什么都不做,把所有的提交操作直接委托给fs catalog.那么目前glue catalog的所有问题
-是不是就全部消失了?
+So, let's think from another angle. If the FS Catalog is reliable enough, assuming nothing is done in the Glue Catalog and all submission operations are delegated directly to the FS Catalog, then all the current issues with Glue Catalog would disappear, wouldn't they?
 
-这样一来,所有的catalog的实现将变得非常简单和轻量,catalog只需要缓存来自fs catalog的信息,加速
-客户端的访问,并且将所有的提交操作下推执行,catalog的实现就完成了.
-这样做,不仅catalog实现简单快速,避免了良莠不齐的工程实现,我们还解锁了多协议客户端互操作的可能性.
+This way, all catalog implementations would become very simple and lightweight. The catalog would only need to cache information from the FS Catalog to speed up client access and delegate all submission operations downstream. The catalog implementation would then be complete. Doing so not only makes the catalog implementation simple and fast, avoiding uneven engineering efforts, but also unlocks the possibility of interoperability between multi-protocol clients.
 
-由于catalog的底层实际上是fs catalog.那么假设客户自建了一个catalog.现在想切换到aws-glue.
-那么用户可以很快指定glue-catalog的fs-location,无缝接管之前的catalog所管理的数据.
-反过来也同理.
+Since the underlying layer of the catalog is actually the FS Catalog, suppose a customer has built their own catalog and now wants to switch to AWS Glue. The user can quickly specify the FS location of the Glue Catalog and seamlessly take over the data managed by the previous catalog. The reverse is also true.
 
-另外,这也也解决了用户想要更换catalog时,目前所面临的一系列问题.由于当前的catalog之间
-互不兼容,用户需要迁移数据与元数据.当用户存在大型数据集或者大型分区表数据集,这基本就是
-不可能完成的事情.
+Additionally, this also solves a series of problems users face when they want to switch catalogs. Due to the current incompatibility between catalogs, users need to migrate both data and metadata. When dealing with large datasets or large partitioned table datasets, this is practically an impossible task.
 
-apache paimon在某种程度上采用了这种思想,目前仅仅只有雏形(我不太确定他们是有意为之还是无意中恰好达成了这样的架构).但也已经收到了
-预期的的效果.从catalog扩展的多样性上来看,paimon并没有比iceberg差多少.因此我认为至少
-它是具备实施的可能性的.
+Apache Paimon has adopted this idea to some extent, though it is still in its early stages (I'm not entirely sure if it was intentional or coincidental). However, it has already achieved the expected results. In terms of catalog extension diversity, Paimon is not far behind Iceberg. Therefore, I believe it at least has the potential for implementation.
 ```
 
 
-6.是否需要减少一些竞争条件?
->例如,写入trackerFile 如果有别的客户端正在写入,导致当前客户端异常,
-是否应该忽略这个异常?在testLocalFileTrackerWithConcurrent方法的测试样例中,
-我们可以观察到,我们有10个客户端,都尝试提交一百次,可是最终提交记录无法达到一百个,这是因为
-trackerFile出现的异常阻止了客户端的提交.导致最终成功提交的次数只有60个左右.
-是否应该减少这种竞争条件?或者说这样就OK?
+6.Is it necessary to reduce some race conditions?
+>For example, when writing to the trackerFile, if another client is currently writing, causing an exception in the current client, should this exception be ignored? In the test case of the testLocalFileTrackerWithConcurrent method, we can observe that we have 10 clients, each attempting to submit a hundred times, but the final submission count does not reach a hundred. This is because the exception in the trackerFile prevented the clients from submitting, resulting in only about 60 successful submissions. Should we reduce such race conditions? Or is this acceptable as it is?
 
-7.如何接管老的HadoopCatalog/其他已有的Catalog?
+7.How to take over the old HadoopCatalog/other existing catalogs?
 ```angular2html
-是个问题......
-一式两份元数据暂时先写?
-数据有了之后,找一天换掉?和最近邮件列表中提案差不多.
+This is a problem...... Should we temporarily write the metadata in duplicate? After we have the data, find a day to replace it? It's similar to the proposal in the recent mailing list.
 ```
