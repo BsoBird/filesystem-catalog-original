@@ -10,3 +10,5 @@ Things yet to be done:
 - Serializable submission.
 
 see demo.fscatalog.process.FileTrackerCommitStrategyV2
+
+If you have any ideas, feel free to communicate with me. plashspeed@foxmail.com.
