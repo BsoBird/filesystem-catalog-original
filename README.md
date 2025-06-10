@@ -1,4 +1,4 @@
-# fs-catalog-original
+# filesystem-catalog-original
 A prototype for implementing catalog management based on arbitrary file systems.
 
 Our goals are:
