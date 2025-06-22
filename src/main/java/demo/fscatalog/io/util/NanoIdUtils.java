@@ -9,12 +9,12 @@ import java.security.SecureRandom;
 import java.util.Random;
 
 /**
- * 这种ID对URL友好一些,但是在JAVA中实际生成速度没有UUID快.
- *
+ * This type of ID is more URL-friendly, but in Java, its actual generation speed is not as fast as UUID.
+ * <p>
  * A class for generating unique String IDs.
- *
+ * <p>
  * The implementations of the core logic in this class are based on NanoId, a JavaScript
- * library by Andrey Sitnik released under the MIT license. (https://github.com/ai/nanoid)
+ * library by Andrey Sitnik released under the MIT license. (<a href="https://github.com/ai/nanoid">...</a>)
  *
  * @author David Klebanoff
  */

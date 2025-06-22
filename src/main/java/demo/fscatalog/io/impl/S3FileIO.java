@@ -17,7 +17,6 @@ import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -43,7 +42,7 @@ public class S3FileIO implements FileIO {
     }
 
     @Override
-    public void writeFileWithNoBehaviourPromises(URI path, String content) throws IOException {
+    public void writeFileWithoutGuarantees(URI path, String content) throws IOException {
         if(!exists(path)){
             writeFile(path, content,true);
         }
@@ -68,7 +67,7 @@ public class S3FileIO implements FileIO {
         if(!path.getPath().endsWith(S3_SEPARATOR)){
             throw new UnsupportedOperationException("Not a Directory path!");
         }
-        writeFileWithNoBehaviourPromises(path,"");
+        writeFileWithoutGuarantees(path,"");
     }
 
     @Override
@@ -82,8 +81,7 @@ public class S3FileIO implements FileIO {
             while (true) {
                 ArrayList<ObjectIdentifier> objects = new ArrayList<>();
 
-                for (Iterator<?> iterator = objectsResponse.contents().iterator(); iterator.hasNext(); ) {
-                    S3Object s3Object = (S3Object)iterator.next();
+                for (S3Object s3Object : objectsResponse.contents()) {
                     objects.add(ObjectIdentifier.builder().key(s3Object.key()).build());
                 }
 

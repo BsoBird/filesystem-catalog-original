@@ -32,7 +32,7 @@ public interface FileIO extends Closeable {
      * If a fileIo implementation does not work with the current default settings,
      * the user should reimplement the method.
      */
-    default void writeFileWithNoBehaviourPromises(URI path,String content) throws IOException{
+    default void writeFileWithoutGuarantees(URI path, String content) throws IOException{
         writeFile(path,content,false);
     }
 

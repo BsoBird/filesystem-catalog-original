@@ -11,7 +11,8 @@ public class UniIdUtils {
     public static final String SNOW_FLAKE = "SNOW_FLAKE";
 
     static {
-        // just for fun
+        // todo:just for fun,do not use it directly, because I have not initialized the globally unique server ID.
+        //  You can only use it in a single-machine scenario.
         IdGeneratorOptions options = new IdGeneratorOptions((short)(System.currentTimeMillis()%Short.MAX_VALUE));
         YitIdHelper.setIdGenerator(options);
     }
