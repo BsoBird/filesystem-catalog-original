@@ -13,4 +13,6 @@ Things yet to be done:
 
 see demo.fscatalog.process.FileTrackerCommitStrategyV2
 
+[FileTrackerCommitStrategyV2-Explained.md](FileTrackerCommitStrategyV2-Explained.md)
+
 If you have any ideas, feel free to communicate with me. plashspeed@foxmail.com.
