@@ -56,53 +56,53 @@ sequenceDiagram
     participant Client2 as Client 2
     participant Tracker as tracker/ directory
     participant Commit as commit/ directory
-    
+
     Note over Client1,Commit: Phase 0: Initialization & Version Discovery
     Client1->>Tracker: LIST tracker/ directory
     Tracker-->>Client1: Returns [1.txt, 2.txt, 3.txt]
     Note over Client1: Parse maxVersion=3<br/>Calculate nextVersion=4
-    
+
     Note over Client1,Commit: Phase 1: Pre-Commit (Intent Declaration)
     Client1->>Commit: Create commit/4/ directory
     Client1->>Commit: Write PRE_COMMIT-client1.txt
     Note over Client1: Purpose: Declare "I want to commit version 4"
-    
+
     Client1->>Commit: LIST commit/4/ directory
     Commit-->>Client1: Returns [PRE_COMMIT-client1.txt]
     Note over Client1: Check: Only my PRE_COMMIT ✓<br/>No other clients ✓
-    
+
     par Concurrent Scenario: Client 2 also attempts commit
         Client2->>Tracker: LIST tracker/ directory
         Tracker-->>Client2: Returns [1.txt, 2.txt, 3.txt]
         Note over Client2: Also calculates nextVersion=4
         Client2->>Commit: Write PRE_COMMIT-client2.txt
     end
-    
+
     Note over Client1,Commit: Phase 2: Conflict Detection
     Client1->>Commit: LIST commit/4/ directory
     Commit-->>Client1: Returns [PRE_COMMIT-client1.txt,<br/>PRE_COMMIT-client2.txt]
     Note over Client1: Conflict detected! ❌<br/>Found client2's PRE_COMMIT
     Client1->>Client1: Throw exception, commit fails
-    
+
     Note over Client2: Client2 also detects conflict and fails
-    
+
     Note over Client1,Commit: Success Scenario: No conflict, continue
     Client1->>Tracker: LIST tracker/ directory
     Note over Client1: Reconfirm version number unchanged
-    
+
     Client1->>Commit: Write COMMIT.txt
     Note over Client1: Purpose: Officially commit data
-    
+
     Client1->>Commit: LIST commit/4/ directory
     Note over Client1: Final conflict check
-    
+
     Client1->>Commit: Write COMMIT-HINT.txt
     Note over Client1: Purpose: Mark commit complete
-    
+
     Note over Client1,Commit: Phase 3: Version Confirmation
     Client1->>Tracker: Write tracker/4.txt
     Note over Client1: Purpose: Officially publish version 4
-    
+
     Note over Client1,Commit: Phase 4: Cleanup
     Client1->>Tracker: LIST tracker/ directory
     Note over Client1: Move old versions to archive/
@@ -121,37 +121,37 @@ graph TB
         T0["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
         C0["commit/<br/>├─ 1/<br/>├─ 2/<br/>└─ 3/"]
     end
-    
+
     subgraph State1["Phase 1: Client1 writes PRE_COMMIT"]
         T1["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt<br/><br/>maxVersion=3"]
         C1["commit/<br/>├─ 1/<br/>├─ 2/<br/>├─ 3/<br/>└─ 4/<br/>    └─ PRE_COMMIT-client1.txt"]
         style C1 fill:#ffe6e6
     end
-    
+
     subgraph State2["Phase 2: LIST check - No conflict"]
         T2["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
         C2["commit/4/<br/>└─ PRE_COMMIT-client1.txt<br/><br/>✓ Only client1's file<br/>✓ Can proceed"]
         style C2 fill:#e6ffe6
     end
-    
+
     subgraph State3["Phase 3: Write COMMIT"]
         T3["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
         C3["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>└─ COMMIT.txt"]
         style C3 fill:#e6f3ff
     end
-    
+
     subgraph State4["Phase 4: Write HINT"]
         T4["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
         C4["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>├─ COMMIT.txt<br/>└─ COMMIT-HINT.txt"]
         style C4 fill:#fff3e6
     end
-    
+
     subgraph State5["Phase 5: Publish version"]
         T5["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>├─ 3.txt<br/>└─ 4.txt ← New version!"]
         C5["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>├─ COMMIT.txt<br/>└─ COMMIT-HINT.txt"]
         style T5 fill:#e6ffe6
     end
-    
+
     State0 --> State1
     State1 --> State2
     State2 --> State3
@@ -285,50 +285,157 @@ commit/3/sub-hint/
 
 ---
 
-### Phase 0.5: Sub-version Discovery
+### Phase 0.25: Create tracker/ File (If Not Exists)
+
 **What we do:**
 ```java
-// Each version has multiple sub-versions (commit attempts)
+URI trackerFile = trackerDir.resolve(maxCommitVersion + ".txt");
+
+// Create tracker file if it doesn't exist
+if(!fileIO.exists(trackerFile)){
+    fileIO.writeFileWithoutGuarantees(trackerFile, maxCommitVersion + "");
+}
+```
+
+**Why:**
+- **tracker/ file might not exist yet** if this is the first attempt at this version
+- First client to attempt a version creates the tracker file
+- Subsequent clients see it already exists and skip creation
+- This is safe because writeFileWithoutGuarantees can be called multiple times
+
+**Example Timeline:**
+```
+Initial state:
+tracker/
+└─ 2.txt  (maxVersion=2)
+
+Client1 arrives:
+→ maxVersion=2, COMMIT-HINT exists
+→ maxVersion++ = 3
+→ tracker/3.txt doesn't exist
+→ Create tracker/3.txt
+
+Client2 arrives (concurrent):
+→ maxVersion=2, COMMIT-HINT exists
+→ maxVersion++ = 3
+→ tracker/3.txt exists (Client1 created it)
+→ Skip creation
+
+Both clients now work on version 3
+```
+
+**Key Point**: tracker/ file creation is **idempotent** and happens early in the process
+
+---
+
+### Phase 0.5: Sub-version Discovery (CRITICAL LOGIC)
+**What we do:**
+```java
+// Step 1: Find maximum sub-version number
 List<FileEntity> subTrackerList = fileIO.listAllFiles(commitSubTrackerDir, false);
 long subCommitVersion = subTrackerList.stream()
     .map(x -> Long.parseLong(x.getFileName().split("\\.")[0]))
     .max(Long::compareTo)
     .orElse(0L);
 
-// Check if current sub-version is expired/failed
-URI commitDetailExpireHint = commitDetailDir.resolve("EXPIRED-HINT.txt");
+URI subTrackerFile = commitSubTrackerDir.resolve(subCommitVersion + ".txt");
+URI commitDetailDir = commitRootDirWithTracker.resolve(subCommitVersion + "/");
+URI commitDetailExpireHint = commitDetailDir.resolve(EXPIRED_HINT);
+
+// Step 2: CRITICAL - Check if this sub-version is expired/failed
 if(fileIO.exists(commitDetailExpireHint)){
-    subCommitVersion++;  // This sub-version failed, try next one
+    subCommitVersion++;  // Skip failed sub-version, move to next
+    subTrackerFile = commitSubTrackerDir.resolve(subCommitVersion + ".txt");
+    commitDetailDir = commitRootDirWithTracker.resolve(subCommitVersion + "/");
+    commitDetailExpireHint = commitDetailDir.resolve(EXPIRED_HINT);
+}
+
+// Step 3: Create sub-tracker file if not exists
+if(!fileIO.exists(subTrackerFile)){
+    fileIO.writeFileWithoutGuarantees(subTrackerFile, subCommitVersion + "");
 }
 ```
 
 **Why:**
-- **Each version can have multiple sub-versions** (multiple clients trying to commit)
-- Only ONE sub-version will succeed per version
-- EXPIRED-HINT.txt marks failed sub-version attempts
-- We need to find the next available sub-version slot
+- **EXPIRED-HINT.txt is the trigger** to move to next sub-version
+- Without checking EXPIRED-HINT.txt, client would retry same failed sub-version
+- This is how clients coordinate to skip failed attempts
+- Each client independently discovers the next available sub-version
 
-**Result:**
+**Result - Case 1: Sub-version 1 has EXPIRED-HINT.txt:**
 ```
 commit/3/
 ├─ sub-tracker/
 │  ├─ 1.txt  → Sub-version 1
-│  └─ 2.txt  → Sub-version 2
+│  └─ 2.txt  → Sub-version 2 (will be created if not exists)
 ├─ 1/
 │  ├─ PRE_COMMIT-client1.txt
-│  ├─ client1.txt
-│  └─ EXPIRED-HINT.txt  ← Failed! Conflict detected
+│  ├─ PRE_COMMIT-client2.txt
+│  └─ EXPIRED-HINT.txt  ← EXISTS! Skip this sub-version
 └─ 2/
-   ├─ PRE_COMMIT-client2.txt
-   └─ client2.txt  ← This one might succeed
+   (empty - ready for new attempt)
 
-→ subVersion = 2 (or 3 if sub-version 2 also has EXPIRED-HINT)
+→ Detected EXPIRED-HINT.txt in sub-version 1
+→ subCommitVersion incremented from 1 to 2
+→ Will attempt commit in sub-version 2
+```
+
+**Result - Case 2: No EXPIRED-HINT.txt:**
+```
+commit/3/
+├─ sub-tracker/
+│  └─ 1.txt  → Sub-version 1
+└─ 1/
+   (empty or has files but no EXPIRED-HINT.txt)
+
+→ No EXPIRED-HINT.txt found
+→ subCommitVersion stays at 1
+→ Will attempt commit in sub-version 1
 ```
 
 **Key Insight**:
-- Version 3 might have sub-versions 1, 2, 3, 4...
-- Only ONE will have matching files in `sub-hint/COMMIT-HINT.txt`
-- All others will have EXPIRED-HINT.txt or be incomplete
+- **EXPIRED-HINT.txt is the coordination mechanism** for sub-version progression
+- When a client writes EXPIRED-HINT.txt, it signals: "This sub-version failed, skip it"
+- Next client checks for EXPIRED-HINT.txt and automatically moves to next sub-version
+- This prevents all clients from retrying the same failed sub-version
+
+---
+
+### Understanding sub-tracker/ Directory
+
+**Purpose**: Track which sub-versions have been attempted (similar to how tracker/ tracks versions)
+
+**Structure**:
+```
+commit/3/sub-tracker/
+├─ 1.txt  → Sub-version 1 was attempted
+├─ 2.txt  → Sub-version 2 was attempted
+└─ 3.txt  → Sub-version 3 was attempted
+```
+
+**How it works**:
+```java
+// Find max sub-version from sub-tracker/
+long subCommitVersion = subTrackerList.stream()
+    .map(x -> Long.parseLong(x.getFileName().split("\\.")[0]))
+    .max(Long::compareTo)
+    .orElse(0L);  // Start from 0 if no sub-versions exist
+
+// Create sub-tracker file if not exists
+if(!fileIO.exists(subTrackerFile)){
+    fileIO.writeFileWithoutGuarantees(subTrackerFile, subCommitVersion + "");
+}
+```
+
+**Why needed**:
+- Provides a quick way to find the latest sub-version attempt
+- Avoids scanning all sub-version directories
+- Similar pattern to tracker/ for versions
+
+**Important**:
+- sub-tracker/ files are created **before** attempting commit
+- Presence of sub-tracker/N.txt means sub-version N was attempted
+- Does NOT indicate success/failure (check EXPIRED-HINT.txt or COMMIT-HINT.txt for that)
 
 ---
 
@@ -336,24 +443,80 @@ commit/3/
 
 **What we do:**
 ```java
-String preCommitFileName = PRE_COMMIT_PREFIX + UniIdUtils.getUniId() + ".txt";
+// Generate unique client ID and filenames
+String commitFileName = UniIdUtils.getUniId() + ".txt";  // e.g., "abc123.txt"
+String preCommitFileName = PRE_COMMIT_PREFIX + commitFileName;  // "PRE_COMMIT-abc123.txt"
+
 URI preCommitFile = commitDetailDir.resolve(preCommitFileName);
 fileIO.writeFileWithoutGuarantees(preCommitFile, preCommitFileName);
 ```
 
 **Why:**
-- **Declare intent**: "I want to commit version 4"
+- **Declare intent**: "I want to commit this sub-version"
 - Create a unique marker file with client ID
 - This allows other clients to detect our presence
 - **Critical**: This is NOT the actual commit, just a declaration
+- commitFileName and preCommitFileName share same client ID (important for pairing later)
 
 **Result:**
 ```
-commit/4/
+commit/3/2/
 └─ PRE_COMMIT-abc123.txt  ← Client's intent marker
 ```
 
 **Analogy**: Like raising your hand in a meeting to say "I want to speak"
+
+---
+
+### Phase 1.5: First Conflict Check (After PRE_COMMIT)
+
+**What we do:**
+```java
+// LIST and filter out OUR PRE_COMMIT file
+commitDetails = fileIO.listAllFiles(commitDetailDir, false)
+    .stream()
+    .filter(x -> !x.getFileName().equals(preCommitFileName))  // Exclude our file
+    .collect(Collectors.toList());
+
+// If any OTHER files exist, conflict!
+if(!commitDetails.isEmpty()){
+    throw new ConcurrentModificationException();
+}
+```
+
+**Why:**
+- Check if any other client also wants to commit this sub-version
+- **Filter out our own PRE_COMMIT**: We expect to see our file
+- **Any other file = conflict**: Other client's PRE_COMMIT or leftover files
+- **Fail-fast**: Immediately abort if conflict detected
+
+**Success Case:**
+```
+commit/3/2/
+└─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
+
+After filtering: []  ← Empty, safe to proceed ✓
+```
+
+**Conflict Case 1: Another client's PRE_COMMIT:**
+```
+commit/3/2/
+├─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
+└─ PRE_COMMIT-xyz789.txt  ← Another client! ❌
+
+After filtering: [PRE_COMMIT-xyz789.txt]  ← Not empty, conflict! ❌
+```
+
+**Conflict Case 2: Leftover files from previous attempt:**
+```
+commit/3/2/
+├─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
+└─ old-client.txt         ← Leftover from crashed client ❌
+
+After filtering: [old-client.txt]  ← Not empty, conflict! ❌
+```
+
+**Analogy**: Check if someone else also raised their hand, but ignore your own hand
 
 ---
 
@@ -434,45 +597,147 @@ commit/3/2/
 
 ---
 
+### Understanding getCommitInfoByCommitGroup()
+
+**Purpose**: Group files by client ID to understand commit status
+
+**How it works:**
+```java
+private Map<String,List<FileEntity>> getCommitInfoByCommitGroup(List<FileEntity> fileEntityList){
+    Map<String,List<FileEntity>> result = new HashMap<>();
+    fileEntityList.stream()
+        .filter(x -> !EXPIRED_HINT.equals(x.getFileName()))  // Ignore EXPIRED-HINT.txt
+        .forEach(x -> {
+            String key = x.getFileName();
+            if(key != null){
+                // Remove PRE_COMMIT- prefix to get client ID
+                if(key.startsWith(PRE_COMMIT_PREFIX)){
+                    key = key.substring(PRE_COMMIT_PREFIX.length());
+                }
+                // Group by client ID
+                result.computeIfAbsent(key, k -> new ArrayList<>()).add(x);
+            }
+        });
+    return result;
+}
+```
+
+**Example:**
+```
+Input files:
+├─ PRE_COMMIT-abc123.txt
+├─ abc123.txt
+├─ PRE_COMMIT-xyz789.txt
+└─ EXPIRED-HINT.txt
+
+Processing:
+1. Filter out EXPIRED-HINT.txt
+2. PRE_COMMIT-abc123.txt → key="abc123.txt" → group["abc123.txt"]
+3. abc123.txt → key="abc123.txt" → group["abc123.txt"]
+4. PRE_COMMIT-xyz789.txt → key="xyz789.txt" → group["xyz789.txt"]
+
+Result:
+{
+  "abc123.txt": [PRE_COMMIT-abc123.txt, abc123.txt],  // size=2, complete
+  "xyz789.txt": [PRE_COMMIT-xyz789.txt]                // size=1, incomplete
+}
+```
+
+**Why needed:**
+- **Identify complete vs incomplete commits**: size=2 means two-phase commit complete
+- **Count concurrent clients**: number of groups = number of clients
+- **Detect conflicts**: multiple groups with size=1 = multiple clients conflicting
+- **Enable recovery**: single group with size=2 = can complete COMMIT-HINT
+
+**Usage in conflict detection:**
+```java
+// Count groups with only 1 file (incomplete)
+List<List<FileEntity>> counter = groupedCommitInfo.values().stream()
+    .filter(x -> x.size() == 1)
+    .collect(Collectors.toList());
+
+// If multiple clients each have only PRE_COMMIT (size==1), it's a conflict
+if(counter.size() == groupedCommitInfo.size() && groupedCommitInfo.size() > 1){
+    // All groups have size=1, and there are multiple groups
+    // This means multiple clients all wrote PRE_COMMIT but none completed
+    fileIO.writeFileWithoutGuarantees(commitDetailExpireHint, "EXPIRED!");
+    throw new ConcurrentModificationException();
+}
+```
+
+---
+
 ### Phase 3: Write COMMIT
 
 **What we do:**
 ```java
-String commitFileName = "COMMIT.txt";
+// Generate unique client ID
+String commitFileName = UniIdUtils.getUniId() + ".txt";  // e.g., "abc123.txt"
+String preCommitFileName = PRE_COMMIT_PREFIX + commitFileName;  // "PRE_COMMIT-abc123.txt"
+
 URI commitFile = commitDetailDir.resolve(commitFileName);
 fileIO.writeFileWithoutGuarantees(commitFile, commitFileName);
 ```
 
 **Why:**
-- Write the actual commit data
-- This is the "real" commit operation
+- Write the actual commit data (second phase of two-phase commit)
+- commitFileName matches preCommitFileName (same client ID)
+- This creates a pair: PRE_COMMIT-abc123.txt + abc123.txt
 - Still not visible to readers (version not published yet)
 
 **Result:**
 ```
-commit/4/
-├─ PRE_COMMIT-abc123.txt
-└─ COMMIT.txt  ← Actual commit data
+commit/3/2/
+├─ PRE_COMMIT-abc123.txt  ← Phase 1
+└─ abc123.txt             ← Phase 2 (just written)
 ```
 
 ---
 
-### Phase 4: Second Conflict Check
+### Phase 4: Second Conflict Check (After COMMIT)
 
 **What we do:**
 ```java
-commitDetails = fileIO.listAllFiles(commitDetailDir, false);
-if (hasConflict(commitDetails, null)) {
+// LIST and filter out OUR files
+commitDetails = fileIO.listAllFiles(commitDetailDir, false)
+    .stream()
+    .filter(x -> !x.getFileName().equals(preCommitFileName))  // Exclude our PRE_COMMIT
+    .filter(x -> !x.getFileName().equals(commitFileName))     // Exclude our COMMIT
+    .collect(Collectors.toList());
+
+// If any OTHER files exist, conflict!
+if(!commitDetails.isEmpty()){
     throw new ConcurrentModificationException();
 }
 ```
 
 **Why:**
 - **Double-check**: Ensure no other client snuck in between Phase 2 and now
+- **Filter out our own files**: We expect to see our PRE_COMMIT and COMMIT files
+- **Any other file = conflict**: If we see files from other clients, abort
 - Object storage has eventual consistency, need to verify again
 - This is the **final safety check** before publishing
 
-**Analogy**: Look around one more time before you start speaking
+**Success Case:**
+```
+commit/3/2/
+├─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
+└─ abc123.txt             ← Our file (filtered out)
+
+After filtering: []  ← Empty, safe to proceed ✓
+```
+
+**Conflict Case:**
+```
+commit/3/2/
+├─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
+├─ abc123.txt             ← Our file (filtered out)
+└─ PRE_COMMIT-xyz789.txt  ← Other client! ❌
+
+After filtering: [PRE_COMMIT-xyz789.txt]  ← Not empty, conflict! ❌
+```
+
+**Analogy**: Look around one more time before you start speaking, but ignore your own voice
 
 ---
 
@@ -600,21 +865,96 @@ T4    LIST commit/4/1/                           LIST commit/4/1/ → Not empty!
       Only my file, proceed
 T5    Write client1.txt                          → Directory not empty!
                                                   → Throw exception ❌
+                                                  → Commit FAILS completely
 T6    LIST commit/4/1/
-      → Find [PRE_COMMIT-client1.txt,            Client2 retries:
-         client1.txt] ✓                          LIST sub-tracker/ → maxSubVersion=1
-      Only my files, proceed                     Check EXPIRED-HINT in 1/ → No
-T7    Write COMMIT-HINT.txt                      → nextSubVersion=2
+      → Find [PRE_COMMIT-client1.txt,
+         client1.txt] ✓
+      Only my files, proceed
+T7    Write COMMIT-HINT.txt
       Write debug file client1.txt
-      → Success! ✓                               LIST commit/4/2/ → Empty ✓
-T8                                                Write PRE_COMMIT-client2.txt
+      → Success! ✓
+
+      --- If Client2 retries (NEW commit attempt, starts from Phase 0) ---
+T8                                                LIST tracker/ → maxVersion=3
+                                                  Check COMMIT-HINT → Exists
+                                                  → nextVersion=4
+T9                                                LIST sub-tracker/ → maxSubVersion=1
+                                                  Check EXPIRED-HINT in 1/ → No
+                                                  → nextSubVersion=2
+T10                                               LIST commit/4/2/ → Empty ✓
+                                                  Write PRE_COMMIT-client2.txt
                                                   ... (continues with sub-version 2)
 ```
 
 **Result**:
 - Client1 succeeds with sub-version 1
-- Client2 detects conflict and moves to sub-version 2
+- Client2 detects conflict, throws exception, and **fails completely**
+- Client2 must **retry the entire commit** (new attempt, new sub-version discovery)
+- On retry, Client2 will discover sub-version 2 is available
 - Version 4 will have multiple sub-versions, but only ONE has COMMIT-HINT
+
+**Important**: Conflict detection causes immediate failure, NOT automatic retry!
+
+---
+
+## Critical Clarification: No Automatic Retry
+
+### Common Misconception
+❌ **WRONG**: "When a client detects conflict, it automatically moves to the next sub-version"
+
+✅ **CORRECT**: "When a client detects conflict, it throws exception and **fails completely**"
+
+### What Actually Happens
+
+```java
+try {
+    strategy.commit(fileIO, rootPath);
+} catch (ConcurrentModificationException e) {
+    // Commit FAILED completely
+    // Client is now in FAILED state
+    // NO automatic retry happens
+
+    // Application layer must decide:
+    // 1. Retry the commit? (starts from Phase 0 again)
+    // 2. Give up?
+    // 3. Backoff and retry later?
+}
+```
+
+### Retry Behavior
+
+**If application decides to retry:**
+1. **Start from Phase 0** - Complete version/sub-version discovery
+2. **New sub-version** - Will discover next available sub-version
+3. **Fresh attempt** - No state carried over from failed attempt
+4. **Independent** - Each retry is a completely new commit attempt
+
+**Example Timeline:**
+```
+Attempt 1:
+  Phase 0: Discover version=3, sub-version=1
+  Phase 1: Write PRE_COMMIT
+  Phase 2: Detect conflict → FAIL ❌
+  → Exception thrown, commit ends
+
+(Application layer decides to retry)
+
+Attempt 2:
+  Phase 0: Discover version=3, sub-version=2  ← NEW discovery
+  Phase 1: Write PRE_COMMIT
+  Phase 2: No conflict → Continue
+  ...
+  → Success ✓
+```
+
+### Why No Automatic Retry?
+
+1. **Separation of concerns**: Strategy handles commit logic, application handles retry policy
+2. **Flexibility**: Application can implement custom backoff, limits, etc.
+3. **Observability**: Application can log, monitor, alert on conflicts
+4. **Resource control**: Prevent infinite retry loops
+
+---
 
 ### Timeline: Multiple Clients Conflict on Same Sub-version
 
@@ -639,10 +979,16 @@ T5                                                                      LIST com
                                                                         → Find 3 PRE_COMMIT files
                                                                         → Write EXPIRED-HINT.txt
                                                                         → Conflict! Abort ❌
-T6    Retry sub-version 2              Retry sub-version 2              Retry sub-version 2
+T6    Exception thrown                 Exception thrown                 Exception thrown
+      Commit fails completely          Commit fails completely          Commit fails completely
 ```
 
-**Result**: All three clients detect the conflict, write EXPIRED-HINT.txt, and retry with next sub-version
+**Result**:
+- All three clients detect the conflict and write EXPIRED-HINT.txt
+- All three clients **throw ConcurrentModificationException**
+- All three commits **fail completely**
+- **Retry is NOT automatic** - application layer must decide whether to retry
+- If they retry, they will start from Phase 0 again (new version/sub-version discovery)
 
 ---
 
@@ -761,21 +1107,21 @@ rootPath/
 // Step 1: Find maximum version
 List<FileEntity> trackerList = fileIO.listAllFiles(trackerDir, false);
 long maxVersion = trackerList.stream()
-    .map(x -> Long.parseLong(x.getFileName().split("\\.")[0]))
-    .max(Long::compareTo)
-    .orElse(0L);
+        .map(x -> Long.parseLong(x.getFileName().split("\\.")[0]))
+        .max(Long::compareTo)
+        .orElse(0L);
 
 // Step 2: CRITICAL - Validate version is complete
 URI commitHintFile = commitDir.resolve(maxVersion + "/sub-hint/COMMIT-HINT.txt");
 if (!fileIO.exists(commitHintFile)) {
-    // Version is incomplete! Try previous version
-    maxVersion--;
-    commitHintFile = commitDir.resolve(maxVersion + "/sub-hint/COMMIT-HINT.txt");
+// Version is incomplete! Try previous version
+maxVersion--;
+commitHintFile = commitDir.resolve(maxVersion + "/sub-hint/COMMIT-HINT.txt");
 
     if (!fileIO.exists(commitHintFile)) {
         throw new Exception("Table corrupted: No valid version found");
     }
-}
+            }
 
 // Step 3: Read COMMIT-HINT to find successful sub-version
 String hintContent = fileIO.readFile(commitHintFile);  // e.g., "clientB.txt@2"
