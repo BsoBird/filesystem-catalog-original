@@ -4,6 +4,8 @@
 
 FileTrackerCommitStrategyV2 implements a **two-phase commit protocol** for distributed consistency on object storage systems that lack atomic operations, file locks, and transactions.
 
+In theory, this submission strategy can be applied to any existing file system, as it relies only on the most basic file system functionalities.
+
 **Core Idea**: Use file existence and directory listing as coordination mechanisms to detect concurrent modifications.
 
 **Key Architecture**: Two-level version hierarchy
