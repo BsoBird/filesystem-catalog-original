@@ -16,34 +16,41 @@ FileTrackerCommitStrategyV2 implements a **two-phase commit protocol** for distr
 ## Quick Reference: Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ Version 3 (tracker/3.txt exists)                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Sub-version 1 (commit/3/1/)          ❌ FAILED                │
-│  ├─ PRE_COMMIT-clientA.txt                                     │
-│  ├─ PRE_COMMIT-clientB.txt            (Multiple clients)       │
-│  └─ EXPIRED-HINT.txt                  (Conflict detected)      │
-│                                                                 │
-│  Sub-version 2 (commit/3/2/)          ✅ SUCCESS               │
-│  ├─ PRE_COMMIT-clientB.txt                                     │
-│  └─ clientB.txt                       (Two-phase complete)     │
-│                                                                 │
-│  Sub-version 3 (commit/3/3/)          ❌ FAILED                │
-│  ├─ PRE_COMMIT-clientC.txt                                     │
-│  └─ EXPIRED-HINT.txt                  (Directory not empty)    │
-│                                                                 │
-│  Version Marker (commit/3/sub-hint/)                           │
-│  ├─ COMMIT-HINT.txt                   Contains: "clientB.txt@2"│
-│  └─ clientB.txt                       (Debug: winner)          │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+Timeline of Version Progression:
+
+Version 1 (COMPLETE)
+├─ tracker/1.txt exists
+├─ commit/1/sub-hint/COMMIT-HINT.txt exists → "clientA.txt@1"
+└─ Sub-version 1: SUCCESS ✅
+   └─ commit/1/1/clientA.txt
+
+Version 2 (COMPLETE)
+├─ tracker/2.txt exists
+├─ commit/2/sub-hint/COMMIT-HINT.txt exists → "clientC.txt@3"
+├─ Sub-version 1: FAILED ❌ (conflict)
+│  └─ commit/2/1/EXPIRED-HINT.txt
+├─ Sub-version 2: FAILED ❌ (conflict)
+│  └─ commit/2/2/EXPIRED-HINT.txt
+└─ Sub-version 3: SUCCESS ✅
+   └─ commit/2/3/clientC.txt
+
+Version 3 (IN PROGRESS - Current version all clients are working on)
+├─ tracker/3.txt exists
+├─ commit/3/sub-hint/COMMIT-HINT.txt NOT exists yet
+├─ Sub-version 1: FAILED ❌ (conflict)
+│  └─ commit/3/1/EXPIRED-HINT.txt
+├─ Sub-version 2: FAILED ❌ (conflict)
+│  └─ commit/3/2/EXPIRED-HINT.txt
+└─ Sub-version 3: IN PROGRESS (clients attempting now)
+   └─ commit/3/3/ (being attempted)
 
 Key Points:
-1. Version 3 has 3 sub-version attempts
-2. Only sub-version 2 succeeded (marked in COMMIT-HINT.txt)
-3. Sub-versions 1 and 3 failed (marked with EXPIRED-HINT.txt)
-4. Readers check COMMIT-HINT.txt to find: "Use sub-version 2 data"
+1. Versions progress sequentially: 1 → 2 → 3
+2. Version N+1 only starts AFTER Version N completes (COMMIT-HINT.txt exists)
+3. Within each version, multiple sub-versions may be attempted
+4. Only ONE sub-version succeeds per version
+5. Failed sub-versions are marked with EXPIRED-HINT.txt
+6. All clients work on the SAME current version simultaneously
 ```
 
 ---
@@ -56,53 +63,53 @@ sequenceDiagram
     participant Client2 as Client 2
     participant Tracker as tracker/ directory
     participant Commit as commit/ directory
-
+    
     Note over Client1,Commit: Phase 0: Initialization & Version Discovery
     Client1->>Tracker: LIST tracker/ directory
     Tracker-->>Client1: Returns [1.txt, 2.txt, 3.txt]
     Note over Client1: Parse maxVersion=3<br/>Calculate nextVersion=4
-
+    
     Note over Client1,Commit: Phase 1: Pre-Commit (Intent Declaration)
     Client1->>Commit: Create commit/4/ directory
     Client1->>Commit: Write PRE_COMMIT-client1.txt
     Note over Client1: Purpose: Declare "I want to commit version 4"
-
+    
     Client1->>Commit: LIST commit/4/ directory
     Commit-->>Client1: Returns [PRE_COMMIT-client1.txt]
     Note over Client1: Check: Only my PRE_COMMIT ✓<br/>No other clients ✓
-
+    
     par Concurrent Scenario: Client 2 also attempts commit
         Client2->>Tracker: LIST tracker/ directory
         Tracker-->>Client2: Returns [1.txt, 2.txt, 3.txt]
         Note over Client2: Also calculates nextVersion=4
         Client2->>Commit: Write PRE_COMMIT-client2.txt
     end
-
+    
     Note over Client1,Commit: Phase 2: Conflict Detection
     Client1->>Commit: LIST commit/4/ directory
     Commit-->>Client1: Returns [PRE_COMMIT-client1.txt,<br/>PRE_COMMIT-client2.txt]
     Note over Client1: Conflict detected! ❌<br/>Found client2's PRE_COMMIT
     Client1->>Client1: Throw exception, commit fails
-
+    
     Note over Client2: Client2 also detects conflict and fails
-
+    
     Note over Client1,Commit: Success Scenario: No conflict, continue
     Client1->>Tracker: LIST tracker/ directory
     Note over Client1: Reconfirm version number unchanged
-
+    
     Client1->>Commit: Write COMMIT.txt
     Note over Client1: Purpose: Officially commit data
-
+    
     Client1->>Commit: LIST commit/4/ directory
     Note over Client1: Final conflict check
-
+    
     Client1->>Commit: Write COMMIT-HINT.txt
     Note over Client1: Purpose: Mark commit complete
-
+    
     Note over Client1,Commit: Phase 3: Version Confirmation
     Client1->>Tracker: Write tracker/4.txt
     Note over Client1: Purpose: Officially publish version 4
-
+    
     Note over Client1,Commit: Phase 4: Cleanup
     Client1->>Tracker: LIST tracker/ directory
     Note over Client1: Move old versions to archive/
@@ -121,37 +128,37 @@ graph TB
         T0["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
         C0["commit/<br/>├─ 1/<br/>├─ 2/<br/>└─ 3/"]
     end
-
+    
     subgraph State1["Phase 1: Client1 writes PRE_COMMIT"]
         T1["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt<br/><br/>maxVersion=3"]
         C1["commit/<br/>├─ 1/<br/>├─ 2/<br/>├─ 3/<br/>└─ 4/<br/>    └─ PRE_COMMIT-client1.txt"]
         style C1 fill:#ffe6e6
     end
-
+    
     subgraph State2["Phase 2: LIST check - No conflict"]
         T2["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
         C2["commit/4/<br/>└─ PRE_COMMIT-client1.txt<br/><br/>✓ Only client1's file<br/>✓ Can proceed"]
         style C2 fill:#e6ffe6
     end
-
+    
     subgraph State3["Phase 3: Write COMMIT"]
         T3["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
         C3["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>└─ COMMIT.txt"]
         style C3 fill:#e6f3ff
     end
-
+    
     subgraph State4["Phase 4: Write HINT"]
         T4["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
         C4["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>├─ COMMIT.txt<br/>└─ COMMIT-HINT.txt"]
         style C4 fill:#fff3e6
     end
-
+    
     subgraph State5["Phase 5: Publish version"]
         T5["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>├─ 3.txt<br/>└─ 4.txt ← New version!"]
         C5["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>├─ COMMIT.txt<br/>└─ COMMIT-HINT.txt"]
         style T5 fill:#e6ffe6
     end
-
+    
     State0 --> State1
     State1 --> State2
     State2 --> State3
@@ -165,68 +172,94 @@ graph TB
 
 ### The Two-Level Hierarchy
 
-**Problem**: Multiple clients might try to commit at the same time, all calculating the same "next version"
+**Problem**: Multiple clients might try to commit at the same time, all working on the same version
 
 **Solution**: Each version can have multiple sub-versions (commit attempts), but only ONE succeeds
 
-```
-Version 3 (in tracker/3.txt)
-├─ Sub-version 1: Client A's attempt → FAILED (conflict with B)
-├─ Sub-version 2: Client B's attempt → SUCCESS ✓
-├─ Sub-version 3: Client C's attempt → FAILED (directory not empty)
-└─ Sub-version 4: Client D's attempt → FAILED (version already complete)
+### Sequential Version Progression Model
 
-Result: Version 3's data comes from Client B's sub-version 2
+**Critical Rule**: Versions progress sequentially. Version N+1 only starts AFTER Version N completes.
+
 ```
+Timeline:
+
+T0: Version 1 completes
+    └─ COMMIT-HINT.txt written
+    └─ All clients now discover Version 2 as next version
+
+T1: All clients work on Version 2
+    ├─ Sub-version 1: Client A & B conflict → FAILED
+    ├─ Sub-version 2: Client C & D conflict → FAILED
+    └─ Sub-version 3: Client E succeeds → COMMIT-HINT.txt written
+
+T2: Version 2 completes
+    └─ All clients now discover Version 3 as next version
+
+T3: All clients work on Version 3
+    └─ (in progress...)
+```
+
+**Key Insight**: You will NEVER see Version 2 complete while Version 3 is still in progress, then Version 4 starts. The progression is strictly sequential.
 
 ### How It Works
 
-1. **Version Discovery**:
-    - All clients LIST `tracker/` and find maxVersion=2
-    - All clients calculate nextVersion=3
-    - All clients try to commit version 3
+1. **Version Discovery** (All clients do this):
+   ```java
+   // Find max version
+   maxVersion = max(tracker/*.txt)  // e.g., 2
 
-2. **Sub-version Competition**:
-    - Client A: Tries sub-version 1
-    - Client B: Also tries sub-version 1 (conflict!)
-    - Both fail, write EXPIRED-HINT.txt
-    - Client A: Retries with sub-version 2
+   // Check if this version is complete
+   if (COMMIT-HINT.txt exists in version 2) {
+       maxVersion++  // Move to version 3
+   }
+   // All clients now work on version 3
+   ```
+
+2. **Sub-version Competition** (Within same version):
+    - Client A: Discovers sub-version 1, attempts commit
+    - Client B: Also discovers sub-version 1, attempts commit
+    - Both conflict, write EXPIRED-HINT.txt, fail
+    - Client A retries: Discovers sub-version 2 (skips 1 due to EXPIRED-HINT.txt)
     - Client A: Succeeds, writes COMMIT-HINT.txt
+    - **Version 3 is now complete**
 
-3. **Version Completion**:
-    - `sub-hint/COMMIT-HINT.txt` contains: `"clientA.txt@2"`
-    - This means: Version 3's successful commit is sub-version 2 by Client A
-    - All other sub-versions are ignored (marked with EXPIRED-HINT.txt)
+3. **Version Completion Triggers Next Version**:
+    - Once COMMIT-HINT.txt exists for Version 3
+    - All subsequent clients discover Version 4 as next version
+    - No client will attempt Version 3 anymore
 
 ### Visual Representation
 
 ```mermaid
-graph TB
-    subgraph Version3["Version 3 (tracker/3.txt)"]
+graph LR
+    V1["Version 1<br/>COMPLETE<br/>✅"] --> V2["Version 2<br/>COMPLETE<br/>✅"]
+    V2 --> V3["Version 3<br/>IN PROGRESS<br/>⏳"]
+    V3 -.-> V4["Version 4<br/>NOT STARTED<br/>⏸"]
+
+    subgraph V3_Detail["Version 3 Details"]
         SV1["Sub-version 1<br/>❌ EXPIRED"]
-        SV2["Sub-version 2<br/>✅ SUCCESS"]
-        SV3["Sub-version 3<br/>❌ EXPIRED"]
+        SV2["Sub-version 2<br/>❌ EXPIRED"]
+        SV3["Sub-version 3<br/>⏳ IN PROGRESS"]
     end
 
-    subgraph Hint["sub-hint/"]
-        CH["COMMIT-HINT.txt<br/>Points to: clientB.txt@2"]
-    end
-
-    SV2 --> CH
-
+    style V1 fill:#ccffcc
+    style V2 fill:#ccffcc
+    style V3 fill:#ffffcc
+    style V4 fill:#e0e0e0
     style SV1 fill:#ffcccc
-    style SV2 fill:#ccffcc
-    style SV3 fill:#ffcccc
-    style CH fill:#ffffcc
+    style SV2 fill:#ffcccc
+    style SV3 fill:#ffffcc
 ```
 
 ### Key Rules
 
-1. **One Version, Multiple Sub-versions**: Each version can have unlimited sub-version attempts
-2. **Only One Succeeds**: Only ONE sub-version per version will have its data in COMMIT-HINT.txt
-3. **Failed Sub-versions**: Marked with EXPIRED-HINT.txt in their directory
-4. **Version Completion**: A version is complete when `sub-hint/COMMIT-HINT.txt` exists
-5. **Reading Logic**: Readers check COMMIT-HINT.txt to find which sub-version to read
+1. **Sequential Version Progression**: Versions progress 1 → 2 → 3 → 4... strictly in order
+2. **Version Completion Requirement**: Version N+1 only starts AFTER Version N's COMMIT-HINT.txt exists
+3. **One Version, Multiple Sub-versions**: Each version can have unlimited sub-version attempts
+4. **Only One Succeeds**: Only ONE sub-version per version will have its data in COMMIT-HINT.txt
+5. **Failed Sub-versions**: Marked with EXPIRED-HINT.txt in their directory
+6. **All Clients on Same Version**: At any given time, all clients work on the same current version
+7. **Reading Logic**: Readers check COMMIT-HINT.txt to find which sub-version to read
 
 ---
 
