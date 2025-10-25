@@ -53,6 +53,7 @@ Key Points:
 4. Only ONE sub-version succeeds per version
 5. Failed sub-versions are marked with EXPIRED-HINT.txt
 6. All clients work on the SAME current version simultaneously
+7. For a small number of metadata files, the cost of list operations is actually not high, so we can also perform the same logical operations on almost any file system (Posix, HDFS, S3...).
 ```
 
 ---
