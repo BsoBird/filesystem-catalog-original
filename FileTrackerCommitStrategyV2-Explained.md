@@ -847,6 +847,14 @@ Object storage systems lack:
 ### The Solution
 Use **LIST operations** as the coordination mechanism:
 
+**Important Optimization for Object Storage**: LIST operations on object storage (S3, OSS, etc.) are paginated queries. Since our purpose is to detect whether other clients are writing (e.g., checking if directory is empty, finding the latest file), we can use **short-circuit reading** by reading only the first page. This significantly reduces the actual I/O cost.
+
+For example:
+- "Is directory empty?" → Read 1 page with `MaxKeys=1`, if returns empty → done
+- "Get latest file" → Read 1 page sorted by name/timestamp, take first → done
+
+This is not a architectural change, but an implementation optimization that makes the strategy practical on object storage.
+
 1. **LIST #1** (Phase 0): Discover current version from tracker/
 2. **LIST #2** (Phase 0.5): Discover sub-version from sub-tracker/
 3. **LIST #3** (Phase 2): Check for conflicts when directory not empty (complex case)
