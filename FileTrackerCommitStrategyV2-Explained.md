@@ -74,24 +74,24 @@ sequenceDiagram
     
     Note over Client1,Commit: Phase 1: Pre-Commit (Intent Declaration)
     Client1->>Commit: Create commit/4/ directory
-    Client1->>Commit: Write PRE_COMMIT-client1.txt
+    Client1->>Commit: Write PRE_COMMIT-uuid-A.txt
     Note over Client1: Purpose: Declare "I want to commit version 4"
     
     Client1->>Commit: LIST commit/4/ directory
-    Commit-->>Client1: Returns [PRE_COMMIT-client1.txt]
+    Commit-->>Client1: Returns [PRE_COMMIT-uuid-A.txt]
     Note over Client1: Check: Only my PRE_COMMIT ✓<br/>No other clients ✓
     
     par Concurrent Scenario: Client 2 also attempts commit
         Client2->>Tracker: LIST tracker/ directory
         Tracker-->>Client2: Returns [1.txt, 2.txt, 3.txt]
         Note over Client2: Also calculates nextVersion=4
-        Client2->>Commit: Write PRE_COMMIT-client2.txt
+        Client2->>Commit: Write PRE_COMMIT-uuid-B.txt
     end
     
     Note over Client1,Commit: Phase 2: Conflict Detection
     Client1->>Commit: LIST commit/4/ directory
-    Commit-->>Client1: Returns [PRE_COMMIT-client1.txt,<br/>PRE_COMMIT-client2.txt]
-    Note over Client1: Conflict detected! ❌<br/>Found client2's PRE_COMMIT
+    Commit-->>Client1: Returns [PRE_COMMIT-uuid-A.txt,<br/>PRE_COMMIT-uuid-B.txt]
+    Note over Client1: Conflict detected! ❌<br/>Found uuid-B's PRE_COMMIT
     Client1->>Client1: Throw exception, commit fails
     
     Note over Client2: Client2 also detects conflict and fails
@@ -100,8 +100,8 @@ sequenceDiagram
     Client1->>Tracker: LIST tracker/ directory
     Note over Client1: Reconfirm version number unchanged
     
-    Client1->>Commit: Write COMMIT.txt
-    Note over Client1: Purpose: Officially commit data
+    Client1->>Commit: Write {UUID}.txt
+    Note over Client1: Purpose: Officially commit data (Phase 2 of two-phase commit)
     
     Client1->>Commit: LIST commit/4/ directory
     Note over Client1: Final conflict check
@@ -130,25 +130,25 @@ graph TB
     
     subgraph State1["Phase 1: Client1 writes PRE_COMMIT"]
         T1["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt<br/><br/>maxVersion=3"]
-        C1["commit/<br/>├─ 1/<br/>├─ 2/<br/>├─ 3/<br/>└─ 4/<br/>    └─ PRE_COMMIT-client1.txt"]
+        C1["commit/<br/>├─ 1/<br/>├─ 2/<br/>├─ 3/<br/>└─ 4/<br/>    └─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt"]
         style C1 fill:#ffe6e6
     end
     
     subgraph State2["Phase 2: LIST check - No conflict"]
         T2["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
-        C2["commit/4/<br/>└─ PRE_COMMIT-client1.txt<br/><br/>✓ Only client1's file<br/>✓ Can proceed"]
+        C2["commit/4/<br/>└─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt<br/><br/>✓ Only one PRE_COMMIT<br/>✓ Can proceed"]
         style C2 fill:#e6ffe6
     end
     
-    subgraph State3["Phase 3: Write COMMIT"]
+    subgraph State3["Phase 3: Write COMMIT (UUID.txt)"]
         T3["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
-        C3["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>└─ COMMIT.txt"]
+        C3["commit/4/<br/>├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt<br/>└─ 550e8400-e29b-41d4-a716-446655440000.txt ← Two-phase commit complete"]
         style C3 fill:#e6f3ff
     end
     
     subgraph State4["Phase 4: Write COMMIT-HINT"]
         T4["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>├─ 3.txt<br/>└─ 4.txt ← Created at Phase 0.25"]
-        C4["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>├─ COMMIT.txt<br/>└─ COMMIT-HINT.txt ← Version complete marker"]
+        C4["commit/4/<br/>├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt<br/>├─ 550e8400-e29b-41d4-a716-446655440000.txt<br/>└─ COMMIT-HINT.txt ← Version complete marker"]
         style C4 fill:#fff3e6
         style T4 fill:#e6ffe6
     end
@@ -183,13 +183,10 @@ T0: Version 1 completes
 T1: All clients work on Version 2
     ├─ Sub-version 1: Client A & B conflict → FAILED
     ├─ Sub-version 2: Client C & D conflict → FAILED
-    └─ Sub-version 3: Client E succeeds → COMMIT-HINT.txt written
+    └─ Sub-version 3: Client E succeeds → COMMIT-HINT.txt written → Version 2 COMPLETE
 
-T2: Version 2 completes
-    └─ All clients now discover Version 3 as next version
-
-T3: All clients work on Version 3
-    └─ (in progress...)
+T2: All clients now discover Version 3 as next version
+    └─ (Version 3 in progress...)
 ```
 
 **Key Insight**: You will NEVER see Version 2 complete while Version 3 is still in progress, then Version 4 starts. The progression is strictly sequential.
@@ -395,8 +392,8 @@ commit/3/
 │  ├─ 1.txt  → Sub-version 1
 │  └─ 2.txt  → Sub-version 2 (will be created if not exists)
 ├─ 1/
-│  ├─ PRE_COMMIT-client1.txt
-│  ├─ PRE_COMMIT-client2.txt
+│  ├─ PRE_COMMIT-uuid-A.txt
+│  ├─ PRE_COMMIT-uuid-B.txt
 │  └─ EXPIRED-HINT.txt  ← EXISTS! Skip this sub-version
 └─ 2/
    (empty - ready for new attempt)
@@ -470,8 +467,8 @@ if(!fileIO.exists(subTrackerFile)){
 **What we do:**
 ```java
 // Generate unique client ID and filenames
-String commitFileName = UniIdUtils.getUniId() + ".txt";  // e.g., "abc123.txt"
-String preCommitFileName = PRE_COMMIT_PREFIX + commitFileName;  // "PRE_COMMIT-abc123.txt"
+String commitFileName = UniIdUtils.getUniId() + ".txt";  // e.g., "550e8400-e29b-41d4-a716-446655440000.txt"
+String preCommitFileName = PRE_COMMIT_PREFIX + commitFileName;  // "PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt"
 
 URI preCommitFile = commitDetailDir.resolve(preCommitFileName);
 fileIO.writeFileWithoutGuarantees(preCommitFile, preCommitFileName);
@@ -487,7 +484,7 @@ fileIO.writeFileWithoutGuarantees(preCommitFile, preCommitFileName);
 **Result:**
 ```
 commit/3/2/
-└─ PRE_COMMIT-abc123.txt  ← Client's intent marker
+└─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt  ← Client's intent marker
 ```
 
 **Analogy**: Like raising your hand in a meeting to say "I want to speak"
@@ -519,7 +516,7 @@ if(!commitDetails.isEmpty()){
 **Success Case:**
 ```
 commit/3/2/
-└─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
+└─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt  ← Our file (filtered out)
 
 After filtering: []  ← Empty, safe to proceed ✓
 ```
@@ -527,16 +524,16 @@ After filtering: []  ← Empty, safe to proceed ✓
 **Conflict Case 1: Another client's PRE_COMMIT:**
 ```
 commit/3/2/
-├─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
-└─ PRE_COMMIT-xyz789.txt  ← Another client! ❌
+├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt  ← Our file (filtered out)
+└─ PRE_COMMIT-660e8400-e29b-41d4-a716-446655440001.txt  ← Another client! ❌
 
-After filtering: [PRE_COMMIT-xyz789.txt]  ← Not empty, conflict! ❌
+After filtering: [PRE_COMMIT-660e8400-e29b-41d4-a716-446655440001.txt]  ← Not empty, conflict! ❌
 ```
 
 **Conflict Case 2: Leftover files from previous attempt:**
 ```
 commit/3/2/
-├─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
+├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt  ← Our file (filtered out)
 └─ old-client.txt         ← Leftover from crashed client ❌
 
 After filtering: [old-client.txt]  ← Not empty, conflict! ❌
@@ -554,7 +551,7 @@ List<FileEntity> commitDetails = fileIO.listAllFiles(commitDetailDir, false);
 
 // If directory is not empty, we need to analyze what's there
 if(!commitDetails.isEmpty()){
-    // Group files by client ID (PRE_COMMIT-client1.txt and client1.txt are same group)
+    // Group files by client ID (PRE_COMMIT-uuid-A.txt and uuid-A.txt are same group)
     Map<String,List<FileEntity>> groupedCommitInfo = getCommitInfoByCommitGroup(commitDetails);
 
     // Count groups that only have 1 file (incomplete commits)
@@ -599,8 +596,8 @@ commit/3/2/
 **Conflict Case 1: Multiple concurrent clients:**
 ```
 commit/3/2/
-├─ PRE_COMMIT-client1.txt  ← Client 1 (incomplete, size=1)
-└─ PRE_COMMIT-client2.txt  ← Client 2 (incomplete, size=1)
+├─ PRE_COMMIT-uuid-A.txt  ← Client A (incomplete, size=1)
+└─ PRE_COMMIT-uuid-B.txt  ← Client B (incomplete, size=1)
 
 → Multiple groups, each with size=1
 → Write EXPIRED-HINT.txt
@@ -610,8 +607,8 @@ commit/3/2/
 **Conflict Case 2: Previous incomplete commit:**
 ```
 commit/3/2/
-├─ PRE_COMMIT-client1.txt  ← From previous attempt
-└─ client1.txt             ← Completed two-phase commit
+├─ PRE_COMMIT-uuid-A.txt  ← From previous attempt
+└─ uuid-A.txt             ← Completed two-phase commit
 
 → One group with size=2, but old (> TTL_PRE_COMMIT)
 → Help write COMMIT-HINT.txt (recovery)
@@ -651,21 +648,21 @@ private Map<String,List<FileEntity>> getCommitInfoByCommitGroup(List<FileEntity>
 **Example:**
 ```
 Input files:
-├─ PRE_COMMIT-abc123.txt
-├─ abc123.txt
-├─ PRE_COMMIT-xyz789.txt
+├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt
+├─ 550e8400-e29b-41d4-a716-446655440000.txt
+├─ PRE_COMMIT-660e8400-e29b-41d4-a716-446655440001.txt
 └─ EXPIRED-HINT.txt
 
 Processing:
 1. Filter out EXPIRED-HINT.txt
-2. PRE_COMMIT-abc123.txt → key="abc123.txt" → group["abc123.txt"]
-3. abc123.txt → key="abc123.txt" → group["abc123.txt"]
-4. PRE_COMMIT-xyz789.txt → key="xyz789.txt" → group["xyz789.txt"]
+2. PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt → key="550e8400-e29b-41d4-a716-446655440000.txt" → group["550e8400-e29b-41d4-a716-446655440000.txt"]
+3. 550e8400-e29b-41d4-a716-446655440000.txt → key="550e8400-e29b-41d4-a716-446655440000.txt" → group["550e8400-e29b-41d4-a716-446655440000.txt"]
+4. PRE_COMMIT-660e8400-e29b-41d4-a716-446655440001.txt → key="660e8400-e29b-41d4-a716-446655440001.txt" → group["660e8400-e29b-41d4-a716-446655440001.txt"]
 
 Result:
 {
-  "abc123.txt": [PRE_COMMIT-abc123.txt, abc123.txt],  // size=2, complete
-  "xyz789.txt": [PRE_COMMIT-xyz789.txt]                // size=1, incomplete
+  "550e8400-e29b-41d4-a716-446655440000.txt": [PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt, 550e8400-e29b-41d4-a716-446655440000.txt],  // size=2, complete
+  "660e8400-e29b-41d4-a716-446655440001.txt": [PRE_COMMIT-660e8400-e29b-41d4-a716-446655440001.txt]                // size=1, incomplete
 }
 ```
 
@@ -698,8 +695,8 @@ if(counter.size() == groupedCommitInfo.size() && groupedCommitInfo.size() > 1){
 **What we do:**
 ```java
 // Generate unique client ID
-String commitFileName = UniIdUtils.getUniId() + ".txt";  // e.g., "abc123.txt"
-String preCommitFileName = PRE_COMMIT_PREFIX + commitFileName;  // "PRE_COMMIT-abc123.txt"
+String commitFileName = UniIdUtils.getUniId() + ".txt";  // e.g., "550e8400-e29b-41d4-a716-446655440000.txt"
+String preCommitFileName = PRE_COMMIT_PREFIX + commitFileName;  // "PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt"
 
 URI commitFile = commitDetailDir.resolve(commitFileName);
 fileIO.writeFileWithoutGuarantees(commitFile, commitFileName);
@@ -708,14 +705,14 @@ fileIO.writeFileWithoutGuarantees(commitFile, commitFileName);
 **Why:**
 - Write the actual commit data (second phase of two-phase commit)
 - commitFileName matches preCommitFileName (same client ID)
-- This creates a pair: PRE_COMMIT-abc123.txt + abc123.txt
+- This creates a pair: PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt + 550e8400-e29b-41d4-a716-446655440000.txt
 - Still not visible to readers (version not published yet)
 
 **Result:**
 ```
 commit/3/2/
-├─ PRE_COMMIT-abc123.txt  ← Phase 1
-└─ abc123.txt             ← Phase 2 (just written)
+├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt  ← Phase 1
+└─ 550e8400-e29b-41d4-a716-446655440000.txt             ← Phase 2 (just written)
 ```
 
 ---
@@ -747,8 +744,8 @@ if(!commitDetails.isEmpty()){
 **Success Case:**
 ```
 commit/3/2/
-├─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
-└─ abc123.txt             ← Our file (filtered out)
+├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt  ← Our file (filtered out)
+└─ 550e8400-e29b-41d4-a716-446655440000.txt             ← Our file (filtered out)
 
 After filtering: []  ← Empty, safe to proceed ✓
 ```
@@ -756,11 +753,11 @@ After filtering: []  ← Empty, safe to proceed ✓
 **Conflict Case:**
 ```
 commit/3/2/
-├─ PRE_COMMIT-abc123.txt  ← Our file (filtered out)
-├─ abc123.txt             ← Our file (filtered out)
-└─ PRE_COMMIT-xyz789.txt  ← Other client! ❌
+├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt  ← Our file (filtered out)
+├─ 550e8400-e29b-41d4-a716-446655440000.txt             ← Our file (filtered out)
+└─ PRE_COMMIT-660e8400-e29b-41d4-a716-446655440001.txt  ← Other client! ❌
 
-After filtering: [PRE_COMMIT-xyz789.txt]  ← Not empty, conflict! ❌
+After filtering: [PRE_COMMIT-660e8400-e29b-41d4-a716-446655440001.txt]  ← Not empty, conflict! ❌
 ```
 
 **Analogy**: Look around one more time before you start speaking, but ignore your own voice
@@ -784,9 +781,9 @@ fileIO.writeFileWithoutGuarantees(hintFile, hintFileName);
 **Result:**
 ```
 commit/4/
-├─ PRE_COMMIT-abc123.txt
-├─ COMMIT.txt
-└─ COMMIT-HINT.txt  ← Completion marker
+├─ PRE_COMMIT-550e8400-e29b-41d4-a716-446655440000.txt
+├─ 550e8400-e29b-41d4-a716-446655440000.txt             ← Two-phase commit complete
+└─ COMMIT-HINT.txt  ← Version completion marker
 ```
 
 ---
@@ -884,21 +881,21 @@ T0    LIST tracker/ → maxVersion=3
 T1    LIST sub-tracker/ → maxSubVersion=0        LIST tracker/ → maxVersion=3
       → nextSubVersion=1                         Check COMMIT-HINT exists → Yes
 T2    LIST commit/4/1/ → Empty ✓                 → nextVersion=4
-      Write PRE_COMMIT-client1.txt
+      Write PRE_COMMIT-uuid-A.txt
 T3                                                LIST sub-tracker/ → maxSubVersion=1
                                                   → nextSubVersion=1 (same!)
 T4    LIST commit/4/1/                           LIST commit/4/1/ → Not empty!
-      → Find [PRE_COMMIT-client1.txt] ✓          → Find [PRE_COMMIT-client1.txt]
+      → Find [PRE_COMMIT-uuid-A.txt] ✓          → Find [PRE_COMMIT-uuid-A.txt]
       Only my file, proceed
-T5    Write client1.txt                          → Directory not empty!
+T5    Write uuid-A.txt                          → Directory not empty!
                                                   → Throw exception ❌
                                                   → Commit FAILS completely
 T6    LIST commit/4/1/
-      → Find [PRE_COMMIT-client1.txt,
-         client1.txt] ✓
+      → Find [PRE_COMMIT-uuid-A.txt,
+         uuid-A.txt] ✓
       Only my files, proceed
 T7    Write COMMIT-HINT.txt
-      Write debug file client1.txt
+      Write debug file uuid-A.txt
       → Success! ✓
 
       --- If Client2 retries (NEW commit attempt, starts from Phase 0) ---
@@ -909,7 +906,7 @@ T9                                                LIST sub-tracker/ → maxSubVe
                                                   Check EXPIRED-HINT in 1/ → No
                                                   → nextSubVersion=2
 T10                                               LIST commit/4/2/ → Empty ✓
-                                                  Write PRE_COMMIT-client2.txt
+                                                  Write PRE_COMMIT-uuid-B.txt
                                                   ... (continues with sub-version 2)
 ```
 
@@ -988,13 +985,13 @@ Attempt 2:
 ```
 Time  Client1                          Client2                          Client3
 ----  --------------------------------  --------------------------------  --------------------------------
-T0    Write PRE_COMMIT-client1.txt
-T1                                     Write PRE_COMMIT-client2.txt
-T2                                                                      Write PRE_COMMIT-client3.txt
+T0    Write PRE_COMMIT-uuid-A.txt
+T1                                     Write PRE_COMMIT-uuid-B.txt
+T2                                                                      Write PRE_COMMIT-uuid-C.txt
 T3    LIST commit/4/1/
-      → Find [PRE_COMMIT-client1.txt,
-         PRE_COMMIT-client2.txt,
-         PRE_COMMIT-client3.txt]
+      → Find [PRE_COMMIT-uuid-A.txt,
+         PRE_COMMIT-uuid-B.txt,
+         PRE_COMMIT-uuid-C.txt]
       → Multiple groups, each size=1
       → Write EXPIRED-HINT.txt
       → Conflict! Abort ❌
@@ -1030,34 +1027,35 @@ rootPath/
 │   └── 4.txt                         # Version 4 (latest)
 │
 ├── commit/                            # Commit details by version
-│   ├── 3/                            # Version 3
+│   ├── 3/                            # Version 3 (COMPLETE)
 │   │   ├── sub-tracker/              # Sub-version tracking
-│   │   │   ├── 1.txt                # Sub-version 1
-│   │   │   ├── 2.txt                # Sub-version 2
-│   │   │   └── 3.txt                # Sub-version 3
+│   │   │   ├── 1.txt                # Sub-version 1 attempted
+│   │   │   └── 2.txt                # Sub-version 2 attempted
 │   │   ├── sub-hint/                 # Version completion marker
-│   │   │   ├── COMMIT-HINT.txt      # Contains: "client2.txt@2"
-│   │   │   └── client2.txt          # Debug: which client succeeded
+│   │   │   ├── COMMIT-HINT.txt      # Contains: "uuid-2.txt@2"
+│   │   │   └── uuid-2.txt          # Debug: which client succeeded
 │   │   ├── 1/                        # Sub-version 1 (FAILED - conflict)
-│   │   │   ├── PRE_COMMIT-client1.txt
-│   │   │   ├── PRE_COMMIT-client2.txt
+│   │   │   ├── PRE_COMMIT-uuid-A.txt
+│   │   │   ├── PRE_COMMIT-uuid-B.txt
 │   │   │   └── EXPIRED-HINT.txt     # Marked as failed
-│   │   ├── 2/                        # Sub-version 2 (SUCCESS)
-│   │   │   ├── PRE_COMMIT-client2.txt
-│   │   │   └── client2.txt          # Two-phase commit complete
-│   │   └── 3/                        # Sub-version 3 (FAILED - directory not empty)
-│   │       ├── PRE_COMMIT-client3.txt
-│   │       └── EXPIRED-HINT.txt
+│   │   └── 2/                        # Sub-version 2 (SUCCESS)
+│   │       ├── PRE_COMMIT-uuid-2.txt
+│   │       └── uuid-2.txt          # Two-phase commit complete
+│   │                                   # Note: Sub-version 3 does NOT exist
+│   │                                   # because version is complete after sub-2 success
 │   │
-│   └── 4/                            # Version 4 (in progress)
+│   └── 4/                            # Version 4 (IN PROGRESS - no COMMIT-HINT yet)
 │       ├── sub-tracker/
-│       │   └── 1.txt
+│       │   ├── 1.txt                # Sub-version 1 attempted
+│       │   └── 2.txt                # Sub-version 2 (current attempt)
 │       ├── sub-hint/
-│       │   ├── COMMIT-HINT.txt      # Contains: "client4.txt@1"
-│       │   └── client4.txt
-│       └── 1/                        # Sub-version 1 (SUCCESS)
-│           ├── PRE_COMMIT-client4.txt
-│           └── client4.txt
+│       │   (empty - no COMMIT-HINT.txt yet)
+│       └── 1/                        # Sub-version 1 (FAILED - conflict)
+│           ├── PRE_COMMIT-uuid-C.txt
+│           ├── PRE_COMMIT-uuid-D.txt
+│           └── EXPIRED-HINT.txt     # Marked as failed
+│                                       # Note: Sub-version 2 directory not yet created
+│                                       # because version 4 is still in progress
 │
 └── archive/                           # Old versions
     ├── 1.txt                         # Archived version 1
@@ -1066,11 +1064,12 @@ rootPath/
 
 ### Key Observations:
 
-1. **Version 3 has 3 sub-versions**, but only sub-version 2 succeeded
-2. **COMMIT-HINT.txt** in `sub-hint/` points to the successful sub-version: `"client2.txt@2"`
-3. **Failed sub-versions** are marked with `EXPIRED-HINT.txt`
-4. **Multiple clients** can attempt the same version, but only ONE succeeds
-5. **Debug files** in `sub-hint/` help identify which client won
+1. **Version 3 has 2 sub-versions**: sub-version 1 failed, sub-version 2 succeeded → Version complete
+2. **COMMIT-HINT.txt** in `sub-hint/` points to the successful sub-version: `"uuid-2.txt@2"`
+3. **Sub-version 3 does NOT exist** for Version 3 because once sub-version 2 succeeded, Version 3 is complete
+4. **Failed sub-versions** are marked with `EXPIRED-HINT.txt`
+5. **Version 4 is IN PROGRESS**: has sub-version 1 failed, but no COMMIT-HINT yet (version not complete)
+6. **Debug files** in `sub-hint/` help identify which client won
 
 ---
 
