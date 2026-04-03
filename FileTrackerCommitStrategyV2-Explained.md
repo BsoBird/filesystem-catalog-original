@@ -8,6 +8,23 @@ In theory, this submission strategy can be applied to any existing file system, 
 
 **Core Idea**: Use file existence and directory listing as coordination mechanisms to detect concurrent modifications.
 
+**Important Prerequisite**: This strategy requires a **CP (Consistency + Partition tolerance)** file system. It is NOT suitable for **AP (Availability + Partition tolerance)** file systems.
+
+**Why CP is required**:
+- The strategy relies on **LIST operations** to detect concurrent modifications and validate commit state
+- On eventual-consistency systems (AP), newly written files may not be immediately visible to other clients
+- This can cause **data loss**: a client writes a file, but another client doesn't see it in time and proceeds with its own commit, overwriting or losing the previous write
+- Examples of AP systems that may exhibit such behavior: eventually-consistent object stores, some distributed filesystems with weak consistency guarantees
+
+**Industry Trend Validates This Requirement**:
+The evolution of cloud object stores confirms this is a fundamental requirement:
+- **Early S3**: Eventually consistent, caused numerous data engineering failures
+- **Modern S3/OSS/GCS**: Stronger consistency guarantees, enabling reliable data pipelines
+
+This is not accidental—cloud vendors progressively strengthened consistency because **write-then-global-visibility is a hard requirement for data engineering**. If a file system cannot provide this guarantee, using it in data engineering scenarios is fundamentally risky.
+
+**The Data Engineering Contract**: Downstream consumers expect that once a writer completes and exits, all written data is immediately and completely visible. Violating this contract means silent data loss—some files appear, others don't, and the consumer cannot distinguish partial reads from complete ones.
+
 **Key Architecture**: Two-level version hierarchy
 - **Version Level**: Major versions (1, 2, 3...) tracked in `tracker/` directory
 - **Sub-version Level**: Multiple commit attempts per version, only ONE succeeds
