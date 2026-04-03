@@ -34,21 +34,30 @@ Version 2 (COMPLETE)
 ├─ tracker/2.txt exists
 ├─ commit/2/sub-hint/COMMIT-HINT.txt exists → "uuid-3.txt@3"
 ├─ Sub-version 1: FAILED ❌ (conflict)
-│  └─ commit/2/1/EXPIRED-HINT.txt
+│  └─ commit/2/1/
+│     ├─ PRE_COMMIT-uuid-A.txt, PRE_COMMIT-uuid-B.txt  (residual files)
+│     └─ EXPIRED-HINT.txt
 ├─ Sub-version 2: FAILED ❌ (conflict)
-│  └─ commit/2/2/EXPIRED-HINT.txt
+│  └─ commit/2/2/
+│     ├─ PRE_COMMIT-uuid-C.txt, PRE_COMMIT-uuid-D.txt  (residual files)
+│     └─ EXPIRED-HINT.txt
 └─ Sub-version 3: SUCCESS ✅
-   └─ commit/2/3/uuid-3.txt
+   └─ commit/2/3/
+      └─ uuid-3.txt  (plus PRE_COMMIT-uuid-3.txt)
 
 Version 3 (IN PROGRESS - Current version all clients are working on)
 ├─ tracker/3.txt exists
 ├─ commit/3/sub-hint/COMMIT-HINT.txt NOT exists yet
 ├─ Sub-version 1: FAILED ❌ (conflict)
-│  └─ commit/3/1/EXPIRED-HINT.txt
+│  └─ commit/3/1/
+│     ├─ PRE_COMMIT-uuid-E.txt, PRE_COMMIT-uuid-F.txt  (residual files)
+│     └─ EXPIRED-HINT.txt
 ├─ Sub-version 2: FAILED ❌ (conflict)
-│  └─ commit/3/2/EXPIRED-HINT.txt
+│  └─ commit/3/2/
+│     ├─ PRE_COMMIT-uuid-G.txt  (residual from one client)
+│     └─ EXPIRED-HINT.txt
 └─ Sub-version 3: IN PROGRESS (clients attempting now)
-   └─ commit/3/3/ (being attempted)
+   └─ commit/3/3/  (empty, currently being attempted)
 
 Key Points:
 1. Versions progress sequentially: 1 → 2 → 3
@@ -1051,15 +1060,16 @@ rootPath/
 │   └── 4/                            # Version 4 (IN PROGRESS - no COMMIT-HINT yet)
 │       ├── sub-tracker/
 │       │   ├── 1.txt                # Sub-version 1 attempted
-│       │   └── 2.txt                # Sub-version 2 (current attempt)
+│       │   └── 2.txt                # Sub-version 2 attempted
 │       ├── sub-hint/
 │       │   (empty - no COMMIT-HINT.txt yet)
-│       └── 1/                        # Sub-version 1 (FAILED - conflict)
-│           ├── PRE_COMMIT-uuid-C.txt
-│           ├── PRE_COMMIT-uuid-D.txt
+│       ├── 1/                        # Sub-version 1 (FAILED - conflict)
+│       │   ├── PRE_COMMIT-uuid-C.txt
+│       │   ├── PRE_COMMIT-uuid-D.txt
+│       │   └── EXPIRED-HINT.txt     # Marked as failed
+│       └── 2/                        # Sub-version 2 (FAILED - conflict)
+│           ├── PRE_COMMIT-uuid-E.txt
 │           └── EXPIRED-HINT.txt     # Marked as failed
-│                                       # Note: Sub-version 2 directory not yet created
-│                                       # because version 4 is still in progress
 │
 └── archive/                           # Old versions
     ├── 1.txt                         # Archived version 1
