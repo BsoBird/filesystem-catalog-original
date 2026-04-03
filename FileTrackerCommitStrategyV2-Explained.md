@@ -109,13 +109,9 @@ sequenceDiagram
     Client1->>Commit: Write COMMIT-HINT.txt
     Note over Client1: Purpose: Mark commit complete
     
-    Note over Client1,Commit: Phase 3: Version Confirmation
-    Client1->>Tracker: Write tracker/4.txt
-    Note over Client1: Purpose: Officially publish version 4
-    
-    Note over Client1,Commit: Phase 4: Cleanup
+    Note over Client1,Commit: Cleanup (happens at the end of commit logic)
     Client1->>Tracker: LIST tracker/ directory
-    Note over Client1: Move old versions to archive/
+    Client1->>Commit: Move old versions to archive/
     Client1->>Commit: Clean up expired commit/ directories
 ```
 
@@ -150,23 +146,17 @@ graph TB
         style C3 fill:#e6f3ff
     end
     
-    subgraph State4["Phase 4: Write HINT"]
-        T4["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>└─ 3.txt"]
-        C4["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>├─ COMMIT.txt<br/>└─ COMMIT-HINT.txt"]
+    subgraph State4["Phase 4: Write COMMIT-HINT"]
+        T4["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>├─ 3.txt<br/>└─ 4.txt ← Created at Phase 0.25"]
+        C4["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>├─ COMMIT.txt<br/>└─ COMMIT-HINT.txt ← Version complete marker"]
         style C4 fill:#fff3e6
-    end
-    
-    subgraph State5["Phase 5: Publish version"]
-        T5["tracker/<br/>├─ 1.txt<br/>├─ 2.txt<br/>├─ 3.txt<br/>└─ 4.txt ← New version!"]
-        C5["commit/4/<br/>├─ PRE_COMMIT-client1.txt<br/>├─ COMMIT.txt<br/>└─ COMMIT-HINT.txt"]
-        style T5 fill:#e6ffe6
+        style T4 fill:#e6ffe6
     end
     
     State0 --> State1
     State1 --> State2
     State2 --> State3
     State3 --> State4
-    State4 --> State5
 ```
 
 ---
@@ -801,40 +791,30 @@ commit/4/
 
 ---
 
-### Phase 6: Publish Version
+### Clarification: tracker/ File vs COMMIT-HINT.txt
 
-**What we do:**
-```java
-String trackerFileName = maxCommitVersion + 1 + ".txt";
-URI trackerFile = trackerDir.resolve(trackerFileName);
-fileIO.writeFileWithoutGuarantees(trackerFile, trackerFileName);
-```
+**Important**: tracker/{version}.txt and COMMIT-HINT.txt serve different purposes:
 
-**Why:**
-- **Make version visible** to all readers
-- This is the moment version 4 becomes "official"
-- Readers discover new versions by listing tracker/ directory
+| File | When Created | Purpose |
+|------|--------------|---------|
+| `tracker/{version}.txt` | Phase 0.25 | **Version claim marker** - indicates a client has claimed this version for commit attempt |
+| `commit/{version}/sub-hint/COMMIT-HINT.txt` | Phase 5 | **Version completion marker** - indicates the version has been successfully committed |
 
-**Result:**
-```
-tracker/
-├─ 1.txt
-├─ 2.txt
-├─ 3.txt
-└─ 4.txt  ← New version published! 🎉
-```
+**tracker/ file is NOT the "publish" mechanism**. The COMMIT-HINT.txt is the true completion marker.
 
-**Analogy**: Publishing a new book - now everyone can see it
+Readers should check COMMIT-HINT.txt to determine if a version is complete, not tracker/ files.
 
 ---
 
-### Phase 7: Cleanup
+### Cleanup: Happens at the End of Commit Logic
 
 **What we do:**
 ```java
 moveTooOldTracker2Archive(fileIO, trackerList, maxCommitVersion, archiveDir, trackerDir);
 cleanTooOldCommit(fileIO, archiveDir, commitDirRoot);
 ```
+
+**When**: Cleanup runs AFTER the commit is successful (after COMMIT-HINT.txt is written), not as a separate phase.
 
 **Why:**
 - Keep only recent versions (e.g., last 2 versions)
@@ -867,15 +847,18 @@ Object storage systems lack:
 ### The Solution
 Use **LIST operations** as the coordination mechanism:
 
-1. **LIST #1** (Phase 0): Discover current version
-2. **LIST #2** (Phase 2): Check for conflicts after PRE_COMMIT
-3. **LIST #3** (Phase 4): Final conflict check before COMMIT
-4. **LIST #4** (Phase 6): Verify version before publishing
-5. **LIST #5-7** (Phase 7): Cleanup operations
+1. **LIST #1** (Phase 0): Discover current version from tracker/
+2. **LIST #2** (Phase 0.5): Discover sub-version from sub-tracker/
+3. **LIST #3** (Phase 2): Check for conflicts when directory not empty (complex case)
+4. **LIST #4** (Phase 1.5): After PRE_COMMIT written, check for other clients
+5. **LIST #5** (Phase 4): After COMMIT written, final conflict check
+6. **LIST #6-7**: Cleanup operations (tracker/ and archive/)
+
+**Note**: Phase numbers here match the document's explanatory phases, not the actual code execution order.
 
 **Trade-off**:
 - ✅ Achieves distributed consistency
-- ⚠️ Requires 5-7 network round trips
+- ⚠️ Requires 6-7 network round trips
 - ⚠️ Performance bottleneck for high-frequency commits
 
 ---
@@ -1210,9 +1193,9 @@ commit/2/sub-hint/COMMIT-HINT.txt MISSING! ❌
 
 | Metric | Value | Reason |
 |--------|-------|--------|
-| LIST operations | 5-7 per commit | Multiple conflict checks |
+| LIST operations | 6-7 per commit | Multiple conflict checks + cleanup |
 | Network round trips | ~10-15 | Each LIST + write is a round trip |
-| Latency | High | Network I/O bound |
+| Latency | Medium | Network I/O bound, but acceptable for minute-level commits |
 | Throughput | Low-Medium | Sequential conflict checks |
 | Scalability | Good | Conflicts are version-isolated |
 
