@@ -26,19 +26,19 @@ Timeline of Version Progression:
 
 Version 1 (COMPLETE)
 ├─ tracker/1.txt exists
-├─ commit/1/sub-hint/COMMIT-HINT.txt exists → "clientA.txt@1"
+├─ commit/1/sub-hint/COMMIT-HINT.txt exists → "uuid-1.txt@1"
 └─ Sub-version 1: SUCCESS ✅
-   └─ commit/1/1/clientA.txt
+   └─ commit/1/1/uuid-1.txt
 
 Version 2 (COMPLETE)
 ├─ tracker/2.txt exists
-├─ commit/2/sub-hint/COMMIT-HINT.txt exists → "clientC.txt@3"
+├─ commit/2/sub-hint/COMMIT-HINT.txt exists → "uuid-3.txt@3"
 ├─ Sub-version 1: FAILED ❌ (conflict)
 │  └─ commit/2/1/EXPIRED-HINT.txt
 ├─ Sub-version 2: FAILED ❌ (conflict)
 │  └─ commit/2/2/EXPIRED-HINT.txt
 └─ Sub-version 3: SUCCESS ✅
-   └─ commit/2/3/clientC.txt
+   └─ commit/2/3/uuid-3.txt
 
 Version 3 (IN PROGRESS - Current version all clients are working on)
 ├─ tracker/3.txt exists
