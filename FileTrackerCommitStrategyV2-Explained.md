@@ -10,7 +10,7 @@ In theory, this submission strategy can be applied to any file system that provi
 
 **Important Prerequisite**: This strategy requires **write-then-global-visibility** semantics from the underlying file system. AP systems (eventual consistency) are not suitable.
 
-**Why**: LIST is the core coordination primitive. If written files are not immediately visible to all clients, the commit detection logic fails, causing data loss. Cloud vendors recognized this—modern S3/OSS/GCS strengthened consistency precisely because data engineering demands it.
+**Why**: Data engineering's fundamental contract requires it—writer completes and exits → all written data must be immediately visible to downstream consumers. Without this guarantee, downstream readers silently receive partial data with no way to detect incompleteness. Cloud vendors recognized this—modern S3/OSS/GCS strengthened consistency precisely because data engineering demands it.
 
 **Key Architecture**: Two-level version hierarchy
 - **Version Level**: Major versions (1, 2, 3...) tracked in `tracker/` directory
